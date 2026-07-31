@@ -1,0 +1,403 @@
+{
+  "users": [
+    {
+      "id": "trader_user_1",
+      "email": "user@trading.demo",
+      "passwordHash": "4518da41a10983a47ccef55a64a9cc455ae3a23b7b5e4a9ed3a1f7666eeaca64e511ba0f658e0627b2d2f836dcdbbc30a6c446ee951ee186b7bf30d41a185ca7",
+      "fullName": "Alex Mercier",
+      "role": "user",
+      "verified": true,
+      "referralCode": "ALEX500",
+      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+      "createdAt": "2026-07-01T12:06:21.320Z"
+    },
+    {
+      "id": "admin_user_1",
+      "email": "admin@trading.demo",
+      "passwordHash": "55a807be5b7208eeae83984cefb96da124b7931b574aa51fb15642308254cbafeee4f84b05c7dac1b0c84d74875f418545284871a7255b24a01830a005a35e2c",
+      "fullName": "Chief Operations Officer",
+      "role": "admin",
+      "verified": true,
+      "referralCode": "PLATFORM_ADMIN",
+      "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200",
+      "createdAt": "2026-06-16T12:06:21.322Z"
+    },
+    {
+      "id": "u_awaz0vq81",
+      "email": "bonayafatuma58@gmail.com",
+      "passwordHash": "60753d62a0867f79f2166dea9b491e096c586be5a1d58795503d53d19b5b694ea3e7255ae186b59bb9249d64f6ace9bd1af62ac2224ef5501585d2986f1fca38",
+      "fullName": "WAKO",
+      "role": "owner",
+      "verified": true,
+      "referralCode": "WAKO669",
+      "avatarUrl": "https://api.dicebear.com/7.x/initials/svg?seed=WAKO",
+      "createdAt": "2026-07-31T12:08:01.180Z"
+    }
+  ],
+  "wallets": [
+    {
+      "id": "w1",
+      "userId": "trader_user_1",
+      "asset": "USD",
+      "balance": 2500,
+      "demoBalance": 5000,
+      "updatedAt": "2026-07-31T12:06:21.322Z"
+    },
+    {
+      "id": "w2",
+      "userId": "trader_user_1",
+      "asset": "BTC",
+      "balance": 0.15,
+      "demoBalance": 1.5,
+      "updatedAt": "2026-07-31T12:06:21.322Z"
+    },
+    {
+      "id": "w3",
+      "userId": "trader_user_1",
+      "asset": "ETH",
+      "balance": 1.25,
+      "demoBalance": 12,
+      "updatedAt": "2026-07-31T12:06:21.322Z"
+    },
+    {
+      "id": "w4",
+      "userId": "admin_user_1",
+      "asset": "USD",
+      "balance": 1250000,
+      "demoBalance": 5000,
+      "updatedAt": "2026-07-31T12:06:21.322Z"
+    },
+    {
+      "id": "w_usd_u_awaz0vq81",
+      "userId": "u_awaz0vq81",
+      "asset": "USD",
+      "balance": 0,
+      "demoBalance": 5000,
+      "updatedAt": "2026-07-31T12:08:01.180Z"
+    },
+    {
+      "id": "w_btc_u_awaz0vq81",
+      "userId": "u_awaz0vq81",
+      "asset": "BTC",
+      "balance": 0,
+      "demoBalance": 0,
+      "updatedAt": "2026-07-31T12:08:01.180Z"
+    },
+    {
+      "id": "w_eth_u_awaz0vq81",
+      "userId": "u_awaz0vq81",
+      "asset": "ETH",
+      "balance": 0,
+      "demoBalance": 0,
+      "updatedAt": "2026-07-31T12:08:01.180Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_1",
+      "userId": "trader_user_1",
+      "walletId": "w1",
+      "type": "deposit",
+      "asset": "USD",
+      "amount": 2500,
+      "status": "completed",
+      "txHash": "0x3a4b9c1d5e6f8a901234567890abcdef1234567890abcdef1234567890abcdef",
+      "description": "Instant Bank Wire Deposit (Simulated Sandbox Credit)",
+      "createdAt": "2026-07-03T12:06:21.322Z"
+    },
+    {
+      "id": "tx_2",
+      "userId": "trader_user_1",
+      "walletId": "w1",
+      "type": "withdrawal",
+      "asset": "USD",
+      "amount": 300,
+      "status": "completed",
+      "txHash": "0x901234567890abcdef1234567890abcdef1234567890abcdef1234567890abc12",
+      "description": "ACH Outbound Settlement",
+      "createdAt": "2026-07-16T12:06:21.322Z"
+    },
+    {
+      "id": "tx_msuqg023n",
+      "userId": "u_awaz0vq81",
+      "walletId": "w_usd_u_awaz0vq81",
+      "type": "trade_win",
+      "asset": "USD",
+      "amount": 19.8,
+      "status": "completed",
+      "txHash": "0x2ed65ee8a760a39884bb743635ed31d05f13ee3eed85212f0c58538eed65bfa3",
+      "description": "Trade Win +19.80 Completed",
+      "createdAt": "2026-07-31T12:08:26.992Z"
+    },
+    {
+      "id": "tx_saryyh3y5",
+      "userId": "u_awaz0vq81",
+      "walletId": "w_usd_u_awaz0vq81",
+      "type": "trade_win",
+      "asset": "USD",
+      "amount": 19.8,
+      "status": "completed",
+      "txHash": "0xfbe0d781c00db45dc29394b49c2101cfd633d95d5455fb3e0b8428cf05e825db",
+      "description": "Trade Win +19.80 Completed",
+      "createdAt": "2026-07-31T12:08:37.996Z"
+    }
+  ],
+  "trades": [
+    {
+      "id": "tr_1",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "BTC",
+      "quantity": 0.5,
+      "entryPrice": 61250,
+      "exitPrice": 63400,
+      "status": "closed",
+      "pnl": 1075,
+      "isDemo": true,
+      "createdAt": "2026-07-26T12:06:21.322Z",
+      "closedAt": "2026-07-27T12:06:21.322Z"
+    },
+    {
+      "id": "tr_2",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "ETH",
+      "quantity": 2.5,
+      "entryPrice": 3200,
+      "exitPrice": 3320,
+      "status": "closed",
+      "pnl": 300,
+      "isDemo": true,
+      "createdAt": "2026-07-28T12:06:21.322Z",
+      "closedAt": "2026-07-29T12:06:21.322Z"
+    },
+    {
+      "id": "tr_3",
+      "userId": "trader_user_1",
+      "type": "sell",
+      "symbol": "Gold",
+      "quantity": 10,
+      "entryPrice": 2350,
+      "exitPrice": 2320,
+      "status": "closed",
+      "pnl": 300,
+      "isDemo": true,
+      "createdAt": "2026-07-29T12:06:21.322Z",
+      "closedAt": "2026-07-30T12:06:21.322Z"
+    },
+    {
+      "id": "tr_4",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "BTC",
+      "quantity": 0.2,
+      "entryPrice": 64200,
+      "status": "open",
+      "pnl": 120,
+      "isDemo": true,
+      "createdAt": "2026-07-31T00:06:21.322Z"
+    },
+    {
+      "id": "tr_y4crgznsk",
+      "userId": "u_awaz0vq81",
+      "type": "buy",
+      "symbol": "VOL_100",
+      "quantity": 10,
+      "entryPrice": 12538.78,
+      "status": "closed",
+      "pnl": 9.8,
+      "isDemo": true,
+      "createdAt": "2026-07-31T12:08:11.980Z",
+      "contractType": "rise_fall",
+      "prediction": "rise",
+      "durationSeconds": 15,
+      "expiryTime": "2026-07-31T12:08:26.980Z",
+      "barrier": 12538.78,
+      "payoutRate": 0.98,
+      "settlementDigit": 4,
+      "exitPrice": 12580.94,
+      "closedAt": "2026-07-31T12:08:26.992Z"
+    },
+    {
+      "id": "tr_38q5ltpi8",
+      "userId": "u_awaz0vq81",
+      "type": "buy",
+      "symbol": "VOL_100",
+      "quantity": 10,
+      "entryPrice": 12546.19,
+      "status": "closed",
+      "pnl": 9.8,
+      "isDemo": true,
+      "createdAt": "2026-07-31T12:08:22.003Z",
+      "contractType": "rise_fall",
+      "prediction": "rise",
+      "durationSeconds": 15,
+      "expiryTime": "2026-07-31T12:08:37.003Z",
+      "barrier": 12546.19,
+      "payoutRate": 0.98,
+      "settlementDigit": 0,
+      "exitPrice": 12690.4,
+      "closedAt": "2026-07-31T12:08:37.996Z"
+    }
+  ],
+  "supportTickets": [
+    {
+      "id": "t_2",
+      "userId": "trader_user_1",
+      "userEmail": "user@trading.demo",
+      "fullName": "Alex Mercier",
+      "title": "Request to reset sandbox demo funds",
+      "description": "Can you please top up my USD paper portfolio? I executed several high-risk shorts and would love to restart.",
+      "status": "open",
+      "createdAt": "2026-07-30T12:06:21.322Z",
+      "replies": []
+    },
+    {
+      "id": "t_1",
+      "userId": "trader_user_1",
+      "userEmail": "user@trading.demo",
+      "fullName": "Alex Mercier",
+      "title": "Interactive TradingView indicators question",
+      "description": "How can I add customized volume and moving average lines to my candlesticks charts?",
+      "status": "resolved",
+      "createdAt": "2026-07-23T12:06:21.322Z",
+      "replies": [
+        {
+          "id": "rep_1",
+          "userId": "admin_user_1",
+          "fullName": "Chief Operations Officer",
+          "role": "admin",
+          "message": "Hello Alex! On the dashboard, our charts support adding multiple overlays like Bollinger Bands or custom moving averages directly from the chart headers. Feel free to toggle them.",
+          "createdAt": "2026-07-24T12:06:21.322Z"
+        },
+        {
+          "id": "rep_2",
+          "userId": "trader_user_1",
+          "fullName": "Alex Mercier",
+          "role": "user",
+          "message": "Awesome, thanks! That worked perfectly.",
+          "createdAt": "2026-07-24T12:06:21.322Z"
+        }
+      ]
+    }
+  ],
+  "announcements": [
+    {
+      "id": "ann_2",
+      "title": "Scheduled System Upgrade",
+      "content": "We will be performing routine backend optimizations on Saturday at 03:00 UTC. Live systems will remain fully available.",
+      "type": "info",
+      "createdAt": "2026-07-29T12:06:21.322Z"
+    },
+    {
+      "id": "ann_1",
+      "title": "CryptonicHub Platform Live Launch",
+      "content": "Welcome to the future of portfolio and paper trading. Experience real-time speed, dynamic indicators, and modern analytics with paper funds.",
+      "type": "success",
+      "createdAt": "2026-07-21T12:06:21.322Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "not_1",
+      "userId": "trader_user_1",
+      "title": "Welcome to CryptonicHub!",
+      "message": "Your account was successfully registered and funded with $5,000 demo trading balance. Explore charts and practice trade executions.",
+      "read": false,
+      "createdAt": "2026-07-11T12:06:21.322Z"
+    },
+    {
+      "id": "not_2",
+      "userId": "trader_user_1",
+      "title": "Demo Trade Profit Realized",
+      "message": "Your buy trade for BTC was closed at $63,400, realizing a profit of $1,075.",
+      "read": true,
+      "createdAt": "2026-07-27T12:06:21.322Z"
+    },
+    {
+      "id": "not_xymuknzv1",
+      "userId": "u_awaz0vq81",
+      "title": "Account Provisioned",
+      "message": "Welcome to CryptonicHub. Your virtual trading accounts have been successfully setup.",
+      "read": true,
+      "createdAt": "2026-07-31T12:08:01.181Z"
+    },
+    {
+      "id": "not_4jdrliutc",
+      "userId": "u_awaz0vq81",
+      "title": "Option Contract Placed",
+      "message": "Successfully placed $10 RISE FALL contract on VOL_100 expiring in 15 seconds.",
+      "read": true,
+      "createdAt": "2026-07-31T12:08:11.980Z"
+    },
+    {
+      "id": "not_ttnh3sh6a",
+      "userId": "u_awaz0vq81",
+      "title": "Option Contract Placed",
+      "message": "Successfully placed $10 RISE FALL contract on VOL_100 expiring in 15 seconds.",
+      "read": true,
+      "createdAt": "2026-07-31T12:08:22.004Z"
+    },
+    {
+      "id": "not_5wab42bmg",
+      "userId": "u_awaz0vq81",
+      "title": "Option Settle: WON",
+      "message": "Your RISE FALL trade on VOL_100 resolved at 12580.94 (Last digit: 4). Stake: $10, Payout: +$9.8",
+      "read": true,
+      "createdAt": "2026-07-31T12:08:26.993Z"
+    },
+    {
+      "id": "not_hbmdnfsb0",
+      "userId": "u_awaz0vq81",
+      "title": "Option Settle: WON",
+      "message": "Your RISE FALL trade on VOL_100 resolved at 12690.4 (Last digit: 0). Stake: $10, Payout: +$9.8",
+      "read": true,
+      "createdAt": "2026-07-31T12:08:37.997Z"
+    }
+  ],
+  "referralCodes": [
+    {
+      "id": "ref_1",
+      "userId": "trader_user_1",
+      "code": "ALEX500",
+      "createdAt": "2026-07-06T12:06:21.322Z"
+    }
+  ],
+  "referralEarnings": [],
+  "activityLogs": [
+    {
+      "id": "log_c08rjs1f0",
+      "userId": "u_awaz0vq81",
+      "action": "Buy Option Contract",
+      "ipAddress": "129.222.147.69, 169.254.169.126",
+      "details": "Purchased RISE_FALL contract on VOL_100 with stake $10 and prediction rise",
+      "createdAt": "2026-07-31T12:08:22.004Z"
+    },
+    {
+      "id": "log_6rvmjofgz",
+      "userId": "u_awaz0vq81",
+      "action": "Buy Option Contract",
+      "ipAddress": "129.222.147.69, 169.254.169.126",
+      "details": "Purchased RISE_FALL contract on VOL_100 with stake $10 and prediction rise",
+      "createdAt": "2026-07-31T12:08:11.980Z"
+    },
+    {
+      "id": "log_9bzguszz3",
+      "userId": "u_awaz0vq81",
+      "action": "User Registration",
+      "ipAddress": "129.222.147.69, 169.254.169.126",
+      "details": "Registered account for bonayafatuma58@gmail.com",
+      "createdAt": "2026-07-31T12:08:01.181Z"
+    },
+    {
+      "id": "al_1",
+      "userId": "trader_user_1",
+      "action": "User Sign In",
+      "ipAddress": "192.168.1.5",
+      "details": "Successful desktop logon session.",
+      "createdAt": "2026-07-31T12:06:21.322Z"
+    }
+  ],
+  "mpesaTransactions": [],
+  "paymentTransactions": []
+}

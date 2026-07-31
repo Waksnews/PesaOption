@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Premium PesaOption Fintech Color Palette */
+  --color-slate-950: #020617; /* Brand Background */
+  --color-slate-900: #0F172A; /* Panel Background / Secondary */
+  --color-slate-850: #1E293B; /* Input/Form fields bg */
+  --color-slate-800: #334155; /* Solid borders */
+  --color-slate-750: #475569; /* Active borders */
+  --color-slate-700: #475569; /* Muted borders */
+  --color-slate-600: #64748B; /* Secondary text */
+  --color-slate-500: #94A3B8; /* Standard muted */
+  --color-slate-400: #CBD5E1; /* Readable grey */
+  --color-slate-300: #E2E8F0; /* Off-white */
+  --color-slate-200: #F1F5F9; /* High contrast text */
+  --color-slate-100: #F8FAFC; /* Bright headers */
+
+  /* Map brand colors for app-wide compatibility */
+  --color-brand-primary: #2563EB;   /* Primary Blue */
+  --color-brand-secondary: #0F172A; /* Slate 900 */
+  --color-brand-accent: #10B981;    /* Accent Green */
+  --color-brand-gold: #F59E0B;      /* Gold Amber */
+  --color-brand-bg: #020617;        /* Ultra dark blue-slate */
+
+  /* Map teal to brand accent/gold dynamically */
+  --color-teal-500: #10B981;
+  --color-teal-400: #10B981;
+  --color-teal-300: #34D399;
+  --color-teal-200: #6EE7B7;
+  --color-teal-100: #D1FAE5;
+
+  /* Map indigo to brand primary */
+  --color-indigo-950: #020617;
+  --color-indigo-900: #0F172A;
+  --color-indigo-800: #1E293B;
+  --color-indigo-700: #334155;
+  --color-indigo-600: #2563EB;
+  --color-indigo-500: #3B82F6;
+  --color-indigo-400: #60A5FA;
+  --color-indigo-300: #93C5FD;
+  --color-indigo-200: #BFDBFE;
+  --color-indigo-100: #EFF6FF;
+
+  /* Emerald -> Brand Accent */
+  --color-emerald-500: #10B981;
+  --color-emerald-400: #34D399;
+  --color-emerald-300: #6EE7B7;
+
+  /* Red -> Error / High-density visual alert */
+  --color-red-500: #EF4444;
+  --color-red-400: #F87171;
+  --color-red-300: #FCA5A5;
+
+  /* Cyan -> Secondary Brand Hue */
+  --color-cyan-300: #38BDF8;
+  --color-cyan-200: #7DD3FC;
+}
+
+@layer base {
+  body {
+    @apply bg-[#020617] text-[#F1F5F9] font-sans antialiased selection:bg-[#2563EB]/30 selection:text-[#38BDF8];
+  }
+}
+
+/* Custom Scrollbars to be clean and minimal */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #020617;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Custom minimal focus outline for inputs */
+input:focus, select:focus, textarea:focus {
+  border-color: #2563EB !important;
+}
