@@ -1544,15 +1544,32 @@ app.get('/api/owner/logs', authenticate, requireOwner, (req, res) => {
   res.json(ownerLogs);
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', service: 'PesaOption Express API' });
+});
+
+// Root API welcome endpoint
+app.get('/', (req, res, next) => {
+  // If Vite middleware is handling root in dev mode, let it pass through
+  if (process.env.NODE_ENV !== 'production' && fs.existsSync(path.join(process.cwd(), 'frontend', 'index.html'))) {
+    return next();
+  }
+  res.json({
+    status: 'ok',
+    name: 'PesaOption Backend API',
+    description: 'Institutional Digital Trading Platform API Service',
+    endpoints: '/api'
+  });
+});
+
 // ============================================================================
-// VITE CLIENT MIDDLEWARE AND ASSET FALLBACKS
+// VITE CLIENT MIDDLEWARE (LOCAL DEV ONLY) & SERVER START
 // ============================================================================
 async function startServer() {
-  const frontendDir = fs.existsSync(path.join(process.cwd(), 'frontend'))
-    ? path.join(process.cwd(), 'frontend')
-    : path.join(__dirname, '../frontend');
-
+  // Local development fallback only: mount Vite middleware if in dev mode
   if (process.env.NODE_ENV !== 'production') {
+    const frontendDir = path.join(process.cwd(), 'frontend');
     if (fs.existsSync(path.join(frontendDir, 'index.html'))) {
       try {
         const { createServer: createViteServer } = await import('vite');
@@ -1565,20 +1582,6 @@ async function startServer() {
       } catch (err) {
         console.log('[SERVER] Running in development mode without Vite middleware.');
       }
-    }
-  } else {
-    const distPath = fs.existsSync(path.join(frontendDir, 'dist'))
-      ? path.join(frontendDir, 'dist')
-      : path.join(process.cwd(), 'dist');
-
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) {
-          return next();
-        }
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
     }
   }
 
