@@ -6,7 +6,6 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
-import { createServer as createViteServer } from 'vite';
 import { Database, hashPassword } from './server/db';
 import { 
   User, UserRole, Wallet, Transaction, TransactionType, Trade, SupportTicket, 
@@ -1555,12 +1554,17 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     if (fs.existsSync(path.join(frontendDir, 'index.html'))) {
-      const vite = await createViteServer({
-        root: frontendDir,
-        server: { middlewareMode: true },
-        appType: 'spa',
-      });
-      app.use(vite.middlewares);
+      try {
+        const { createServer: createViteServer } = await import('vite');
+        const vite = await createViteServer({
+          root: frontendDir,
+          server: { middlewareMode: true },
+          appType: 'spa',
+        });
+        app.use(vite.middlewares);
+      } catch (err) {
+        console.log('[SERVER] Running in development mode without Vite middleware.');
+      }
     }
   } else {
     const distPath = fs.existsSync(path.join(frontendDir, 'dist'))
@@ -1569,7 +1573,10 @@ async function startServer() {
 
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+          return next();
+        }
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }

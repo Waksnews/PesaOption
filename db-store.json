@@ -1,0 +1,238 @@
+{
+  "users": [
+    {
+      "id": "trader_user_1",
+      "email": "user@trading.demo",
+      "passwordHash": "4518da41a10983a47ccef55a64a9cc455ae3a23b7b5e4a9ed3a1f7666eeaca64e511ba0f658e0627b2d2f836dcdbbc30a6c446ee951ee186b7bf30d41a185ca7",
+      "fullName": "Alex Mercier",
+      "role": "user",
+      "verified": true,
+      "referralCode": "ALEX500",
+      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+      "createdAt": "2026-07-01T14:16:26.080Z"
+    },
+    {
+      "id": "admin_user_1",
+      "email": "admin@trading.demo",
+      "passwordHash": "55a807be5b7208eeae83984cefb96da124b7931b574aa51fb15642308254cbafeee4f84b05c7dac1b0c84d74875f418545284871a7255b24a01830a005a35e2c",
+      "fullName": "Chief Operations Officer",
+      "role": "admin",
+      "verified": true,
+      "referralCode": "PLATFORM_ADMIN",
+      "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200",
+      "createdAt": "2026-06-16T14:16:26.081Z"
+    }
+  ],
+  "wallets": [
+    {
+      "id": "w1",
+      "userId": "trader_user_1",
+      "asset": "USD",
+      "balance": 2500,
+      "demoBalance": 5000,
+      "updatedAt": "2026-07-31T14:16:26.081Z"
+    },
+    {
+      "id": "w2",
+      "userId": "trader_user_1",
+      "asset": "BTC",
+      "balance": 0.15,
+      "demoBalance": 1.5,
+      "updatedAt": "2026-07-31T14:16:26.081Z"
+    },
+    {
+      "id": "w3",
+      "userId": "trader_user_1",
+      "asset": "ETH",
+      "balance": 1.25,
+      "demoBalance": 12,
+      "updatedAt": "2026-07-31T14:16:26.081Z"
+    },
+    {
+      "id": "w4",
+      "userId": "admin_user_1",
+      "asset": "USD",
+      "balance": 1250000,
+      "demoBalance": 5000,
+      "updatedAt": "2026-07-31T14:16:26.081Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_1",
+      "userId": "trader_user_1",
+      "walletId": "w1",
+      "type": "deposit",
+      "asset": "USD",
+      "amount": 2500,
+      "status": "completed",
+      "txHash": "0x3a4b9c1d5e6f8a901234567890abcdef1234567890abcdef1234567890abcdef",
+      "description": "Instant Bank Wire Deposit (Simulated Sandbox Credit)",
+      "createdAt": "2026-07-03T14:16:26.081Z"
+    },
+    {
+      "id": "tx_2",
+      "userId": "trader_user_1",
+      "walletId": "w1",
+      "type": "withdrawal",
+      "asset": "USD",
+      "amount": 300,
+      "status": "completed",
+      "txHash": "0x901234567890abcdef1234567890abcdef1234567890abcdef1234567890abc12",
+      "description": "ACH Outbound Settlement",
+      "createdAt": "2026-07-16T14:16:26.081Z"
+    }
+  ],
+  "trades": [
+    {
+      "id": "tr_1",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "BTC",
+      "quantity": 0.5,
+      "entryPrice": 61250,
+      "exitPrice": 63400,
+      "status": "closed",
+      "pnl": 1075,
+      "isDemo": true,
+      "createdAt": "2026-07-26T14:16:26.081Z",
+      "closedAt": "2026-07-27T14:16:26.081Z"
+    },
+    {
+      "id": "tr_2",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "ETH",
+      "quantity": 2.5,
+      "entryPrice": 3200,
+      "exitPrice": 3320,
+      "status": "closed",
+      "pnl": 300,
+      "isDemo": true,
+      "createdAt": "2026-07-28T14:16:26.081Z",
+      "closedAt": "2026-07-29T14:16:26.081Z"
+    },
+    {
+      "id": "tr_3",
+      "userId": "trader_user_1",
+      "type": "sell",
+      "symbol": "Gold",
+      "quantity": 10,
+      "entryPrice": 2350,
+      "exitPrice": 2320,
+      "status": "closed",
+      "pnl": 300,
+      "isDemo": true,
+      "createdAt": "2026-07-29T14:16:26.081Z",
+      "closedAt": "2026-07-30T14:16:26.081Z"
+    },
+    {
+      "id": "tr_4",
+      "userId": "trader_user_1",
+      "type": "buy",
+      "symbol": "BTC",
+      "quantity": 0.2,
+      "entryPrice": 64200,
+      "status": "open",
+      "pnl": 120,
+      "isDemo": true,
+      "createdAt": "2026-07-31T02:16:26.081Z"
+    }
+  ],
+  "supportTickets": [
+    {
+      "id": "t_1",
+      "userId": "trader_user_1",
+      "userEmail": "user@trading.demo",
+      "fullName": "Alex Mercier",
+      "title": "Interactive TradingView indicators question",
+      "description": "How can I add customized volume and moving average lines to my candlesticks charts?",
+      "status": "resolved",
+      "createdAt": "2026-07-23T14:16:26.081Z",
+      "replies": [
+        {
+          "id": "rep_1",
+          "userId": "admin_user_1",
+          "fullName": "Chief Operations Officer",
+          "role": "admin",
+          "message": "Hello Alex! On the dashboard, our charts support adding multiple overlays like Bollinger Bands or custom moving averages directly from the chart headers. Feel free to toggle them.",
+          "createdAt": "2026-07-24T14:16:26.081Z"
+        },
+        {
+          "id": "rep_2",
+          "userId": "trader_user_1",
+          "fullName": "Alex Mercier",
+          "role": "user",
+          "message": "Awesome, thanks! That worked perfectly.",
+          "createdAt": "2026-07-24T14:16:26.081Z"
+        }
+      ]
+    },
+    {
+      "id": "t_2",
+      "userId": "trader_user_1",
+      "userEmail": "user@trading.demo",
+      "fullName": "Alex Mercier",
+      "title": "Request to reset sandbox demo funds",
+      "description": "Can you please top up my USD paper portfolio? I executed several high-risk shorts and would love to restart.",
+      "status": "open",
+      "createdAt": "2026-07-30T14:16:26.081Z",
+      "replies": []
+    }
+  ],
+  "announcements": [
+    {
+      "id": "ann_1",
+      "title": "CryptonicHub Platform Live Launch",
+      "content": "Welcome to the future of portfolio and paper trading. Experience real-time speed, dynamic indicators, and modern analytics with paper funds.",
+      "type": "success",
+      "createdAt": "2026-07-21T14:16:26.081Z"
+    },
+    {
+      "id": "ann_2",
+      "title": "Scheduled System Upgrade",
+      "content": "We will be performing routine backend optimizations on Saturday at 03:00 UTC. Live systems will remain fully available.",
+      "type": "info",
+      "createdAt": "2026-07-29T14:16:26.081Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "not_1",
+      "userId": "trader_user_1",
+      "title": "Welcome to CryptonicHub!",
+      "message": "Your account was successfully registered and funded with $5,000 demo trading balance. Explore charts and practice trade executions.",
+      "read": false,
+      "createdAt": "2026-07-11T14:16:26.081Z"
+    },
+    {
+      "id": "not_2",
+      "userId": "trader_user_1",
+      "title": "Demo Trade Profit Realized",
+      "message": "Your buy trade for BTC was closed at $63,400, realizing a profit of $1,075.",
+      "read": true,
+      "createdAt": "2026-07-27T14:16:26.081Z"
+    }
+  ],
+  "referralCodes": [
+    {
+      "id": "ref_1",
+      "userId": "trader_user_1",
+      "code": "ALEX500",
+      "createdAt": "2026-07-06T14:16:26.081Z"
+    }
+  ],
+  "referralEarnings": [],
+  "activityLogs": [
+    {
+      "id": "al_1",
+      "userId": "trader_user_1",
+      "action": "User Sign In",
+      "ipAddress": "192.168.1.5",
+      "details": "Successful desktop logon session.",
+      "createdAt": "2026-07-31T14:16:26.081Z"
+    }
+  ],
+  "mpesaTransactions": [],
+  "paymentTransactions": []
+}
