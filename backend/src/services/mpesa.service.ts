@@ -9,6 +9,7 @@ import { Database } from '../../server/db';
 import { MpesaTransaction, MpesaStatus, Transaction, Notification } from '../types';
 import { formatPhoneNumber, generateTimestamp, generatePassword } from '../utils/mpesa';
 import { SMSService } from './sms.service';
+import { EmailService } from './email.service';
 
 export class MpesaService {
   private static getBaseUrl(): string {
@@ -205,12 +206,25 @@ export class MpesaService {
         };
         db.notifications.push(notif);
 
-        // Send SMS Notification
+        // Send SMS & Email Notifications
         const targetUser = db.users.find(u => u.id === userId);
         const userPhone = mpesaTx.phone || targetUser?.phoneNumber;
+        const ref = receiptNumber !== 'N/A' ? receiptNumber : CheckoutRequestID;
+
+        console.log(`[NOTIFICATION TRIGGER] M-Pesa Deposit Completed: Ref ${ref} | Amount KES ${mpesaTx.amount} ($${creditedAmount} USD) | User ID ${userId}`);
+
         if (userPhone) {
-          const ref = receiptNumber !== 'N/A' ? receiptNumber : CheckoutRequestID;
           SMSService.sendDepositSMS(userPhone, `KES ${mpesaTx.amount}`, ref).catch(err => console.error('[MPESA SMS ERROR]', err));
+        }
+
+        if (targetUser?.email) {
+          EmailService.sendDepositEmail(
+            targetUser.email,
+            targetUser.fullName || targetUser.email.split('@')[0],
+            `KES ${mpesaTx.amount} ($${creditedAmount.toFixed(2)} USD)`,
+            'KES',
+            ref
+          ).catch(err => console.error('[MPESA EMAIL ERROR]', err));
         }
 
         console.log(`[MPESA CALLBACK] Successfully updated wallet and credited $${creditedAmount} USD for User: ${userId}`);

@@ -51,9 +51,13 @@ export function normalizeKenyanPhoneNumber(phone?: string | null): string | null
 export class SMSService {
   public static normalizeKenyanPhoneNumber = normalizeKenyanPhoneNumber;
 
-  private static getClient() {
+  private static getClient(): { client: any; senderId?: string } | null {
     const username = process.env.AFRICASTALKING_USERNAME;
     const apiKey = process.env.AFRICASTALKING_API_KEY;
+    const senderId = process.env.AFRICASTALKING_SENDER_ID || process.env.AFRICASTALKING_FROM;
+
+    const maskedKey = apiKey ? `${apiKey.substring(0, 5)}...${apiKey.slice(-4)}` : 'MISSING';
+    console.log(`[SMS SERVICE INIT] Username: ${username || 'MISSING'} | API Key: ${maskedKey} | Sender ID: ${senderId || 'None (default)'}`);
 
     if (username && apiKey) {
       try {
@@ -61,9 +65,9 @@ export class SMSService {
           username,
           apiKey,
         });
-        return at.SMS;
-      } catch (err) {
-        console.error('[SMS SERVICE ERROR] Failed to initialize Africa\'s Talking SDK:', err);
+        return { client: at.SMS, senderId };
+      } catch (err: any) {
+        console.error('[SMS SERVICE ERROR] Failed to initialize Africa\'s Talking SDK:', err?.message || err);
         return null;
       }
     }
@@ -78,32 +82,62 @@ export class SMSService {
     const normalizedPhone = normalizeKenyanPhoneNumber(phone);
 
     if (!normalizedPhone) {
+      console.warn(`[SMS SERVICE VALIDATION] Invalid phone number provided: "${phone}". Skipped dispatch.`);
       console.log('[SMS] Invalid phone number');
       return false;
     }
 
+    // Africa's Talking API requires international format with leading + (e.g. +254712345678)
+    const formattedPhone = `+${normalizedPhone}`;
+
     console.log(`[SMS] Sending to ${normalizedPhone}`);
+    console.log(`[SMS SERVICE] Sending SMS to ${formattedPhone} (Length: ${message.length} chars)`);
 
-    const smsClient = this.getClient();
+    const initResult = this.getClient();
 
-    if (smsClient) {
+    if (initResult && initResult.client) {
       try {
-        const result = await smsClient.send({
-          to: [normalizedPhone],
+        const options: any = {
+          to: [formattedPhone],
           message,
+        };
+        if (initResult.senderId) {
+          options.from = initResult.senderId;
+        }
+
+        console.log(`[SMS SERVICE PROVIDER REQUEST] Dispatching to Africa's Talking SDK:`, {
+          to: options.to,
+          from: options.from || 'default',
         });
-        console.log(`[SMS SERVICE] Message successfully dispatched to ${normalizedPhone}:`, result);
+
+        const result = await initResult.client.send(options);
+        console.log(`[SMS SERVICE PROVIDER RESPONSE] Africa's Talking result:`, JSON.stringify(result));
+
+        // Inspect recipient delivery status array in Africa's Talking response
+        const recipients = result?.SMSMessageData?.Recipients || [];
+        for (const rec of recipients) {
+          console.log(`[SMS DELIVERY STATUS] Recipient: ${rec.number} | Status: ${rec.status} | Cost: ${rec.cost} | MessageId: ${rec.messageId}`);
+          if (rec.status !== 'Success' && rec.status !== 'Sent') {
+            console.warn(`[SMS DELIVERY WARNING] Delivery status for ${rec.number} is "${rec.status}" (Reason: ${rec.status})`);
+          }
+        }
+
         return true;
       } catch (error: any) {
-        console.error(`[SMS SERVICE ERROR] Error sending SMS to ${normalizedPhone}:`, error?.message || error);
+        console.error(`[SMS SERVICE ERROR] Error sending SMS to ${formattedPhone}:`, {
+          message: error?.message || error,
+          stack: error?.stack,
+          rawError: JSON.stringify(error),
+        });
         return false;
       }
     }
 
     // Placeholder fallback when credentials are not supplied
+    console.warn('[SMS SERVICE WARN] Africa\'s Talking credentials not configured. Falling back to logger.');
     console.log(`\n==================================================`);
     console.log(`[SMS PLACEHOLDER]`);
-    console.log(`Recipient: ${normalizedPhone}`);
+    console.log(`Recipient: ${formattedPhone}`);
     console.log(`Message: ${message}`);
     console.log(`==================================================\n`);
     return true;

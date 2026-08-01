@@ -9,6 +9,7 @@ import { Database } from '../../server/db';
 import { PaymentTransaction, PaymentStatus, Transaction, Notification } from '../types';
 import { formatIntaSendPhone } from '../utils/intasend';
 import { SMSService } from './sms.service';
+import { EmailService } from './email.service';
 
 export class IntaSendService {
   private static getBaseUrl(): string {
@@ -341,11 +342,24 @@ export class IntaSendService {
 
     db.notifications.push(notif);
 
-    // Send SMS Notification
+    // Send SMS & Email Notifications
     const targetUser = db.users.find(u => u.id === userId);
     const userPhone = paymentTx.phone || targetUser?.phoneNumber;
+
+    console.log(`[NOTIFICATION TRIGGER] IntaSend Deposit Completed: Invoice ${paymentTx.invoiceId} | Amount KES ${depositAmountKes} ($${creditedUsd} USD) | User ID ${userId}`);
+
     if (userPhone) {
       SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes}`, paymentTx.invoiceId).catch(err => console.error('[INTASEND SMS ERROR]', err));
+    }
+
+    if (targetUser?.email) {
+      EmailService.sendDepositEmail(
+        targetUser.email,
+        targetUser.fullName || targetUser.email.split('@')[0],
+        `KES ${depositAmountKes} ($${creditedUsd.toFixed(2)} USD)`,
+        'KES',
+        paymentTx.invoiceId
+      ).catch(err => console.error('[INTASEND EMAIL ERROR]', err));
     }
 
     // 5. Commit changes to persistent database

@@ -43,12 +43,14 @@ export class PasswordResetController {
         const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
         const resetUrl = `${frontendUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
 
+        console.log(`[NOTIFICATION TRIGGER] Password Reset Request: User ${user.email} | Phone ${user.phoneNumber || 'None'}`);
+
         // Send email via EmailService
-        await EmailService.sendPasswordResetEmail(
+        EmailService.sendPasswordResetEmail(
           user.email,
           user.fullName || user.email.split('@')[0],
           resetUrl
-        );
+        ).catch(err => console.error('[PASSWORD RESET EMAIL ERROR]', err));
 
         // Send SMS via SMSService if phone number exists
         if (user.phoneNumber) {

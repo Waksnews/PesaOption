@@ -511,6 +511,12 @@ app.post('/api/auth/register', (req, res) => {
   logActivity(userId, 'User Registration', `Registered account for ${email}`, req);
   createNotification(userId, 'Account Provisioned', 'Welcome to CryptonicHub. Your virtual trading accounts have been successfully setup.');
 
+  console.log(`[NOTIFICATION TRIGGER] User Registration: ${newUser.email} | Phone: ${newUser.phoneNumber || 'None'}`);
+
+  EmailService.sendWelcomeEmail(newUser.email, newUser.fullName || newUser.email.split('@')[0]).catch(err =>
+    console.error('[WELCOME EMAIL ERROR]', err)
+  );
+
   if (newUser.phoneNumber) {
     SMSService.sendWelcomeSMS(newUser.phoneNumber, newUser.fullName).catch(err =>
       console.error('[WELCOME SMS ERROR]', err)
@@ -744,6 +750,8 @@ app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
   logActivity(req.userId, 'Wallet Withdrawal Request Created', `Submitted withdrawal request ${referenceId} for $${valAmount} ${activeAsset} via ${paymentMethod}`, req);
   createNotification(req.userId, 'Withdrawal Submitted', `Your withdrawal request ${referenceId} of $${valAmount.toLocaleString()} ${activeAsset} has been submitted for admin review.`);
 
+  console.log(`[NOTIFICATION TRIGGER] Withdrawal Submission: Ref ${referenceId} | Amount $${valAmount} ${activeAsset} | User ${user.email} | Phone ${userPhone || 'None'}`);
+
   // Dispatch notifications asynchronously
   EmailService.sendWithdrawalSubmittedEmail(
     user.email,
@@ -760,12 +768,17 @@ app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
     });
   }
 
-  // Alert Admins via SMS
-  const adminUsers = db.users.filter(u => (u.role === 'admin' || u.role === 'owner') && u.phoneNumber);
+  // Alert Admins via Email & SMS
+  const adminUsers = db.users.filter(u => u.role === 'admin' || u.role === 'owner');
   for (const admin of adminUsers) {
     if (admin.phoneNumber) {
       SMSService.sendAdminWithdrawalAlertSMS(admin.phoneNumber, user.email, userPhone, `$${valAmount}`, referenceId).catch((err: any) => {
         console.error('[ADMIN WITHDRAWAL ALERT SMS ERROR]', err);
+      });
+    }
+    if (admin.email) {
+      EmailService.sendAdminWithdrawalAlertEmail(admin.email, user.email, userPhone || 'None', `$${valAmount} ${activeAsset}`, referenceId).catch((err: any) => {
+        console.error('[ADMIN WITHDRAWAL ALERT EMAIL ERROR]', err);
       });
     }
   }
@@ -1470,6 +1483,9 @@ app.post('/api/admin/withdrawals/:id/approve', authenticate, requireAdmin, async
 
   const user = db.users.find(u => u.id === wreq.userId);
   if (user) {
+    const phone = wreq.phoneNumber || user.phoneNumber;
+    console.log(`[NOTIFICATION TRIGGER] Withdrawal Approval: Ref ${wreq.referenceId} | Amount $${wreq.amount} | User ${user.email} | Phone ${phone || 'None'}`);
+
     // Dispatch Email & SMS
     EmailService.sendWithdrawalApprovedEmail(
       user.email,
@@ -1480,7 +1496,6 @@ app.post('/api/admin/withdrawals/:id/approve', authenticate, requireAdmin, async
       wreq.referenceId
     ).catch((err: any) => console.error('[WITHDRAWAL APPROVED EMAIL ERROR]', err));
 
-    const phone = wreq.phoneNumber || user.phoneNumber;
     if (phone) {
       SMSService.sendWithdrawalApprovedSMS(phone, `$${wreq.amount} ${wreq.currency || 'USD'}`, wreq.referenceId).catch((err: any) => {
         console.error('[WITHDRAWAL APPROVED SMS ERROR]', err);
@@ -1536,6 +1551,9 @@ app.post('/api/admin/withdrawals/:id/reject', authenticate, requireAdmin, async 
 
   const user = db.users.find(u => u.id === wreq.userId);
   if (user) {
+    const phone = wreq.phoneNumber || user.phoneNumber;
+    console.log(`[NOTIFICATION TRIGGER] Withdrawal Rejection: Ref ${wreq.referenceId} | Amount $${wreq.amount} | User ${user.email} | Phone ${phone || 'None'} | Reason: ${rejectReason}`);
+
     // Dispatch Email & SMS
     EmailService.sendWithdrawalRejectedEmail(
       user.email,
@@ -1547,7 +1565,6 @@ app.post('/api/admin/withdrawals/:id/reject', authenticate, requireAdmin, async 
       rejectReason
     ).catch((err: any) => console.error('[WITHDRAWAL REJECTED EMAIL ERROR]', err));
 
-    const phone = wreq.phoneNumber || user.phoneNumber;
     if (phone) {
       SMSService.sendWithdrawalRejectedSMS(phone, `$${wreq.amount} ${wreq.currency || 'USD'}`, wreq.referenceId, rejectReason).catch((err: any) => {
         console.error('[WITHDRAWAL REJECTED SMS ERROR]', err);
