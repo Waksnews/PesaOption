@@ -38,9 +38,9 @@ export class PasswordResetController {
         user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
         db.save();
 
-        // Construct reset link
-        const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-        const resetUrl = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
+        // Construct reset link using FRONTEND_URL or APP_URL
+        const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+        const resetUrl = `${frontendUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
 
         // Send email via EmailService
         await EmailService.sendPasswordResetEmail(
