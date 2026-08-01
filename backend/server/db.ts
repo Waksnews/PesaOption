@@ -70,9 +70,10 @@ export function getPrismaClient(): PrismaClient | null {
 export class Database {
   private static instance: Database;
   private data: DatabaseSchema = { ...defaultSchema };
+  private initPromise: Promise<void> | null = null;
 
   private constructor() {
-    this.load();
+    this.init().catch(err => console.error('[DB] Database initialization error:', err));
   }
 
   public static getInstance(): Database {
@@ -82,14 +83,226 @@ export class Database {
     return Database.instance;
   }
 
-  private load() {
+  public async init(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.loadFromDatabase();
+    }
+    return this.initPromise;
+  }
+
+  private async loadFromDatabase(): Promise<void> {
+    const prisma = getPrismaClient();
+
+    if (prisma) {
+      try {
+        console.log('[DB] Connecting to PostgreSQL via Prisma...');
+        const userCount = await prisma.user.count();
+
+        if (userCount > 0) {
+          console.log(`[DB] PostgreSQL contains existing data (${userCount} users). Using PostgreSQL as single source of truth.`);
+          
+          const [
+            users, wallets, transactions, trades, supportTickets,
+            announcements, notifications, referralCodes, referralEarnings,
+            activityLogs, mpesaTxs, paymentTxs
+          ] = await Promise.all([
+            prisma.user.findMany(),
+            prisma.wallet.findMany(),
+            prisma.transaction.findMany(),
+            prisma.trade.findMany(),
+            prisma.supportTicket.findMany({ include: { replies: true } }),
+            prisma.announcement.findMany(),
+            prisma.notification.findMany(),
+            prisma.referralCode.findMany(),
+            prisma.referralEarning.findMany(),
+            prisma.activityLog.findMany(),
+            prisma.mpesaTransaction.findMany(),
+            prisma.paymentTransaction.findMany(),
+          ]);
+
+          this.data.users = users.map(u => ({
+            id: u.id,
+            email: u.email,
+            passwordHash: u.passwordHash,
+            fullName: u.fullName,
+            role: u.role as any,
+            phoneNumber: u.phoneNumber || undefined,
+            verified: u.verified,
+            referralCode: u.referralCode,
+            referredBy: u.referredBy || undefined,
+            avatarUrl: u.avatarUrl || undefined,
+            passwordResetToken: u.passwordResetToken || undefined,
+            passwordResetExpires: u.passwordResetExpires ? u.passwordResetExpires.toISOString() : undefined,
+            passwordChangedAt: u.passwordChangedAt ? u.passwordChangedAt.toISOString() : undefined,
+            createdAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.wallets = wallets.map(w => ({
+            id: w.id,
+            userId: w.userId,
+            asset: w.asset,
+            balance: Number(w.balance),
+            demoBalance: Number(w.demoBalance),
+            updatedAt: w.updatedAt ? w.updatedAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.transactions = transactions.map(t => ({
+            id: t.id,
+            userId: t.userId,
+            walletId: t.walletId,
+            type: t.type as any,
+            asset: t.asset,
+            amount: Number(t.amount),
+            status: t.status as any,
+            txHash: t.txHash || '',
+            description: t.description || '',
+            phone: t.phone || undefined,
+            createdAt: t.createdAt ? t.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.trades = trades.map(tr => ({
+            id: tr.id,
+            userId: tr.userId,
+            type: tr.type as any,
+            symbol: tr.symbol,
+            quantity: Number(tr.quantity),
+            entryPrice: Number(tr.entryPrice),
+            exitPrice: tr.exitPrice != null ? Number(tr.exitPrice) : undefined,
+            status: tr.status as any,
+            pnl: Number(tr.pnl),
+            isDemo: tr.isDemo,
+            createdAt: tr.createdAt ? tr.createdAt.toISOString() : new Date().toISOString(),
+            closedAt: tr.closedAt ? tr.closedAt.toISOString() : undefined,
+            contractType: (tr.contractType as any) || 'spot',
+            prediction: tr.prediction || undefined,
+            durationSeconds: tr.durationSeconds != null ? tr.durationSeconds : undefined,
+            expiryTime: tr.expiryTime ? tr.expiryTime.toISOString() : undefined,
+            barrier: tr.barrier != null ? Number(tr.barrier) : undefined,
+            payoutRate: tr.payoutRate != null ? Number(tr.payoutRate) : undefined,
+            settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : undefined
+          }));
+
+          this.data.supportTickets = supportTickets.map(st => ({
+            id: st.id,
+            userId: st.userId,
+            userEmail: st.userEmail,
+            fullName: st.fullName,
+            title: st.title,
+            description: st.description,
+            status: st.status as any,
+            createdAt: st.createdAt ? st.createdAt.toISOString() : new Date().toISOString(),
+            replies: (st.replies || []).map(r => ({
+              id: r.id,
+              userId: r.userId,
+              fullName: r.fullName,
+              role: r.role as any,
+              message: r.message,
+              createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString()
+            }))
+          }));
+
+          this.data.announcements = announcements.map(a => ({
+            id: a.id,
+            title: a.title,
+            content: a.content,
+            type: a.type as any,
+            createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.notifications = notifications.map(n => ({
+            id: n.id,
+            userId: n.userId,
+            title: n.title,
+            message: n.message,
+            read: n.read,
+            createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.referralCodes = referralCodes.map(rc => ({
+            id: rc.id,
+            userId: rc.userId,
+            code: rc.code,
+            createdAt: rc.createdAt ? rc.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.referralEarnings = referralEarnings.map(re => ({
+            id: re.id,
+            userId: re.userId,
+            referrerId: re.referrerId,
+            amount: Number(re.amount),
+            description: re.description,
+            createdAt: re.createdAt ? re.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.activityLogs = activityLogs.map(al => ({
+            id: al.id,
+            userId: al.userId || undefined,
+            action: al.action,
+            ipAddress: al.ipAddress,
+            details: al.details,
+            createdAt: al.createdAt ? al.createdAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.mpesaTransactions = mpesaTxs.map(m => ({
+            id: m.id,
+            userId: m.userId,
+            phone: m.phone,
+            amount: Number(m.amount),
+            merchantRequestId: m.merchantRequestId,
+            checkoutRequestId: m.checkoutRequestId,
+            receiptNumber: m.receiptNumber || undefined,
+            status: m.status as any,
+            resultCode: m.resultCode != null ? m.resultCode : undefined,
+            resultDesc: m.resultDesc || undefined,
+            createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
+            updatedAt: m.updatedAt ? m.updatedAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.paymentTransactions = paymentTxs.map(p => ({
+            id: p.id,
+            userId: p.userId,
+            invoiceId: p.invoiceId,
+            provider: p.provider,
+            paymentMethod: p.paymentMethod,
+            phone: p.phone,
+            amount: Number(p.amount),
+            currency: p.currency,
+            status: p.status as any,
+            reference: p.reference || undefined,
+            createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+            updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString()
+          }));
+
+          console.log(`[DB] Successfully loaded from PostgreSQL (${this.data.users.length} users, ${this.data.wallets.length} wallets, ${this.data.trades.length} trades, ${this.data.transactions.length} transactions).`);
+          this.ensureOwnerRole();
+          return;
+        } else {
+          console.log('[DB] PostgreSQL database is empty. Performing initial seed from db-store.json / default seed...');
+          this.loadFromLocalJson();
+          this.ensureOwnerRole();
+          await this.syncToPostgres();
+          console.log('[DB] Initial seed to PostgreSQL completed.');
+          return;
+        }
+      } catch (err) {
+        console.warn('[DB] PostgreSQL fetch error, falling back to local store:', err);
+      }
+    }
+
+    // Fallback for local development when DATABASE_URL is not provided
+    console.log('[DB] Loading local JSON store fallback...');
+    this.loadFromLocalJson();
+    this.ensureOwnerRole();
+  }
+
+  private loadFromLocalJson() {
     try {
       if (fs.existsSync(DB_FILE)) {
         const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(fileContent);
-        console.log('[DB] Database loaded successfully from', DB_FILE);
+        console.log('[DB] Database loaded successfully from local file', DB_FILE);
       } else {
-        console.log('[DB] No database file found, initializing new schema.');
+        console.log('[DB] No local db-store.json file found, initializing new default schema.');
         this.data = { ...defaultSchema };
         this.seed();
         this.save();
@@ -101,98 +314,19 @@ export class Database {
           w.demoBalance = 5000;
         }
       });
-
-      // Ensure owner role
-      const ownerAcc = this.data.users.find(u => u.email.toLowerCase() === 'bonayafatuma58@gmail.com');
-      if (ownerAcc && ownerAcc.role !== 'owner') {
-        ownerAcc.role = 'owner';
-        this.save();
-        console.log('[DB] Promoted bonayafatuma58@gmail.com to "owner" role');
-      }
-
-      // Sync with PostgreSQL if DATABASE_URL is present
-      this.syncFromPostgresIfConfigured();
-
     } catch (error) {
-      console.error('[DB] Error loading database, running fallback init:', error);
+      console.error('[DB] Error loading local json database, initializing default schema:', error);
       this.data = { ...defaultSchema };
       this.seed();
     }
   }
 
-  private async syncFromPostgresIfConfigured() {
-    const prisma = getPrismaClient();
-    if (!prisma) return;
-
-    try {
-      console.log('[DB] Connecting to PostgreSQL via Prisma...');
-      const dbUsers = await prisma.user.findMany({
-        include: {
-          wallets: true,
-          transactions: true,
-          trades: true,
-          supportTickets: { include: { replies: true } },
-          notifications: true,
-          referralCodes: true,
-          referralEarnings: true,
-          activityLogs: true,
-          mpesaTransactions: true,
-          paymentTransactions: true,
-        }
-      });
-
-      if (dbUsers.length > 0) {
-        console.log(`[DB] Loaded ${dbUsers.length} users from PostgreSQL via Prisma.`);
-        // Map users from PostgreSQL to JS format
-        this.data.users = dbUsers.map(u => ({
-          id: u.id,
-          email: u.email,
-          passwordHash: u.passwordHash,
-          fullName: u.fullName,
-          role: u.role as any,
-          phoneNumber: u.phoneNumber || undefined,
-          verified: u.verified,
-          referralCode: u.referralCode,
-          referredBy: u.referredBy || undefined,
-          avatarUrl: u.avatarUrl || undefined,
-          passwordResetToken: u.passwordResetToken || undefined,
-          passwordResetExpires: u.passwordResetExpires ? u.passwordResetExpires.toISOString() : undefined,
-          passwordChangedAt: u.passwordChangedAt ? u.passwordChangedAt.toISOString() : undefined,
-          createdAt: u.createdAt.toISOString()
-        }));
-
-        // Fetch remaining global tables
-        const [announcements, activityLogs] = await Promise.all([
-          prisma.announcement.findMany(),
-          prisma.activityLog.findMany()
-        ]);
-
-        if (announcements.length > 0) {
-          this.data.announcements = announcements.map(a => ({
-            id: a.id,
-            title: a.title,
-            content: a.content,
-            type: a.type as any,
-            createdAt: a.createdAt.toISOString()
-          }));
-        }
-
-        if (activityLogs.length > 0) {
-          this.data.activityLogs = activityLogs.map(a => ({
-            id: a.id,
-            userId: a.userId || undefined,
-            action: a.action,
-            ipAddress: a.ipAddress,
-            details: a.details,
-            createdAt: a.createdAt.toISOString()
-          }));
-        }
-      } else {
-        console.log('[DB] PostgreSQL database empty. Seeding PostgreSQL from local db-store.json (preserving legacy IDs)...');
-        await this.syncToPostgres();
-      }
-    } catch (err) {
-      console.warn('[DB] Prisma sync attempt failed (using db-store fallback):', err);
+  private ensureOwnerRole() {
+    const ownerAcc = this.data.users.find(u => u.email.toLowerCase() === 'bonayafatuma58@gmail.com');
+    if (ownerAcc && ownerAcc.role !== 'owner') {
+      ownerAcc.role = 'owner';
+      console.log('[DB] Promoted bonayafatuma58@gmail.com to "owner" role');
+      this.save();
     }
   }
 
@@ -322,7 +456,201 @@ export class Database {
         });
       }
 
-      console.log('[DB] Synchronized all data to PostgreSQL via Prisma successfully.');
+      // Upsert Support Tickets & Replies
+      for (const st of this.data.supportTickets) {
+        await prisma.supportTicket.upsert({
+          where: { id: st.id },
+          update: {
+            userEmail: st.userEmail,
+            fullName: st.fullName,
+            title: st.title,
+            description: st.description,
+            status: st.status
+          },
+          create: {
+            id: st.id,
+            userId: st.userId,
+            userEmail: st.userEmail,
+            fullName: st.fullName,
+            title: st.title,
+            description: st.description,
+            status: st.status,
+            createdAt: st.createdAt ? new Date(st.createdAt) : new Date()
+          }
+        });
+
+        if (st.replies) {
+          for (const rep of st.replies) {
+            await prisma.ticketReply.upsert({
+              where: { id: rep.id },
+              update: {
+                fullName: rep.fullName,
+                role: rep.role as any,
+                message: rep.message
+              },
+              create: {
+                id: rep.id,
+                ticketId: st.id,
+                userId: rep.userId,
+                fullName: rep.fullName,
+                role: rep.role as any,
+                message: rep.message,
+                createdAt: rep.createdAt ? new Date(rep.createdAt) : new Date()
+              }
+            });
+          }
+        }
+      }
+
+      // Upsert Announcements
+      for (const a of this.data.announcements) {
+        await prisma.announcement.upsert({
+          where: { id: a.id },
+          update: {
+            title: a.title,
+            content: a.content,
+            type: a.type as any
+          },
+          create: {
+            id: a.id,
+            title: a.title,
+            content: a.content,
+            type: a.type as any,
+            createdAt: a.createdAt ? new Date(a.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Notifications
+      for (const n of this.data.notifications) {
+        await prisma.notification.upsert({
+          where: { id: n.id },
+          update: {
+            title: n.title,
+            message: n.message,
+            read: n.read
+          },
+          create: {
+            id: n.id,
+            userId: n.userId,
+            title: n.title,
+            message: n.message,
+            read: n.read,
+            createdAt: n.createdAt ? new Date(n.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Referral Codes
+      for (const rc of this.data.referralCodes) {
+        await prisma.referralCode.upsert({
+          where: { id: rc.id },
+          update: {
+            code: rc.code
+          },
+          create: {
+            id: rc.id,
+            userId: rc.userId,
+            code: rc.code,
+            createdAt: rc.createdAt ? new Date(rc.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Referral Earnings
+      for (const re of this.data.referralEarnings) {
+        await prisma.referralEarning.upsert({
+          where: { id: re.id },
+          update: {
+            amount: re.amount,
+            description: re.description
+          },
+          create: {
+            id: re.id,
+            userId: re.userId,
+            referrerId: re.referrerId,
+            amount: re.amount,
+            description: re.description,
+            createdAt: re.createdAt ? new Date(re.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Activity Logs
+      for (const al of this.data.activityLogs) {
+        await prisma.activityLog.upsert({
+          where: { id: al.id },
+          update: {
+            action: al.action,
+            ipAddress: al.ipAddress,
+            details: al.details
+          },
+          create: {
+            id: al.id,
+            userId: al.userId || null,
+            action: al.action,
+            ipAddress: al.ipAddress,
+            details: al.details,
+            createdAt: al.createdAt ? new Date(al.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Mpesa Transactions
+      for (const m of this.data.mpesaTransactions) {
+        await prisma.mpesaTransaction.upsert({
+          where: { id: m.id },
+          update: {
+            status: m.status as any,
+            receiptNumber: m.receiptNumber || null,
+            resultCode: m.resultCode != null ? m.resultCode : null,
+            resultDesc: m.resultDesc || null,
+            updatedAt: m.updatedAt ? new Date(m.updatedAt) : new Date()
+          },
+          create: {
+            id: m.id,
+            userId: m.userId,
+            phone: m.phone,
+            amount: m.amount,
+            merchantRequestId: m.merchantRequestId,
+            checkoutRequestId: m.checkoutRequestId,
+            receiptNumber: m.receiptNumber || null,
+            status: m.status as any,
+            resultCode: m.resultCode != null ? m.resultCode : null,
+            resultDesc: m.resultDesc || null,
+            createdAt: m.createdAt ? new Date(m.createdAt) : new Date(),
+            updatedAt: m.updatedAt ? new Date(m.updatedAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Payment Transactions
+      for (const p of this.data.paymentTransactions) {
+        await prisma.paymentTransaction.upsert({
+          where: { id: p.id },
+          update: {
+            status: p.status as any,
+            reference: p.reference || null,
+            updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
+          },
+          create: {
+            id: p.id,
+            userId: p.userId,
+            invoiceId: p.invoiceId,
+            provider: p.provider,
+            paymentMethod: p.paymentMethod,
+            phone: p.phone,
+            amount: p.amount,
+            currency: p.currency,
+            status: p.status as any,
+            reference: p.reference || null,
+            createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+            updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
+          }
+        });
+      }
+
+      console.log('[DB] Synchronized data to PostgreSQL via Prisma successfully.');
     } catch (err) {
       console.warn('[DB] Error saving to PostgreSQL via Prisma:', err);
     }
@@ -335,11 +663,15 @@ export class Database {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
-
-      // Async background sync to PostgreSQL if connected
-      this.syncToPostgres().catch(e => console.warn('[DB] Async Postgres sync error:', e));
     } catch (error) {
-      console.error('[DB] Error saving database:', error);
+      if (!process.env.DATABASE_URL) {
+        console.error('[DB] Error saving to local db-store.json file:', error);
+      }
+    }
+
+    // Sync to PostgreSQL if DATABASE_URL is present
+    if (process.env.DATABASE_URL) {
+      this.syncToPostgres().catch(e => console.warn('[DB] Async Postgres sync error:', e));
     }
   }
 
@@ -359,7 +691,7 @@ export class Database {
 
   // Seed default data
   private seed() {
-    console.log('[DB] Seeding database with high-fidelity demo data...');
+    console.log('[DB] Seeding database schema with high-fidelity default demo data...');
 
     const traderId = 'trader_user_1';
     const traderPass = hashPassword('user123');

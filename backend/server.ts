@@ -1567,6 +1567,13 @@ app.get('/', (req, res, next) => {
 // VITE CLIENT MIDDLEWARE (LOCAL DEV ONLY) & SERVER START
 // ============================================================================
 async function startServer() {
+  // Ensure Database initialization completes before listening
+  try {
+    await Database.getInstance().init();
+  } catch (err) {
+    console.warn('[SERVER] Database init warning:', err);
+  }
+
   // Local development fallback only: mount Vite middleware if in dev mode
   if (process.env.NODE_ENV !== 'production') {
     const frontendDir = path.join(process.cwd(), 'frontend');
