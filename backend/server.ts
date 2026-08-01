@@ -16,7 +16,7 @@ import mpesaRouter from './src/routes/mpesa.routes';
 import paymentRouter from './src/routes/payment.routes';
 import webhookRouter from './src/routes/webhook.routes';
 import passwordRouter from './src/routes/password.routes';
-import { sendSMS } from './server/services/sms';
+import { SMSService } from './src/services/sms.service';
 
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI | null {
@@ -702,8 +702,16 @@ app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
   }
 
   db.save();
-  logActivity(req.userId, 'Wallet Withdrawal', `Withdrew ${valAmount} ${activeAsset} to ${address || 'Bank'}`, req);
-  createNotification(req.userId, 'Withdrawal Processed', `Withdrew ${valAmount} ${activeAsset} successfully.`);
+  logActivity(req.userId, 'Wallet Withdrawal', `Withdrew ${valAmount} ${activeAsset} to ${address || 'Payout Account'}`, req);
+  createNotification(req.userId, 'Withdrawal Submitted', `Your withdrawal request of $${valAmount.toLocaleString()} ${activeAsset} has been submitted for processing.`);
+
+  // Trigger SMS notification asynchronously
+  const user = db.users.find(u => u.id === req.userId);
+  if (user && user.phoneNumber) {
+    SMSService.sendWithdrawalSMS(user.phoneNumber, `$${valAmount} ${activeAsset}`, txId).catch(err => {
+      console.error('[WITHDRAWAL SMS ERROR]', err);
+    });
+  }
 
   res.json({ message: 'Withdrawal completed', transaction, wallets: db.wallets.filter(w => w.userId === req.userId) });
 });
@@ -1374,11 +1382,9 @@ app.put('/api/admin/transactions/:id/status', authenticate, requireAdmin, async 
     if (userPhone) {
       const reference = tx.txHash || tx.id;
       if (tx.type === 'withdrawal') {
-        const smsMsg = `PesaOption\n\nYour withdrawal request has been approved.\n\nAmount: KES ${tx.amount}\n\nReference: ${reference}\n\nStatus: APPROVED`;
-        sendSMS(userPhone, smsMsg).catch(err => console.error('[ADMIN WITHDRAWAL SMS ERROR]', err));
+        SMSService.sendWithdrawalSMS(userPhone, `KES ${tx.amount}`, reference).catch((err: any) => console.error('[ADMIN WITHDRAWAL SMS ERROR]', err));
       } else if (tx.type === 'deposit') {
-        const smsMsg = `PesaOption\n\nDeposit of KES ${tx.amount} received successfully.\n\nYour wallet has been credited.\n\nReference: ${reference}`;
-        sendSMS(userPhone, smsMsg).catch(err => console.error('[ADMIN DEPOSIT SMS ERROR]', err));
+        SMSService.sendDepositSMS(userPhone, `KES ${tx.amount}`, reference).catch((err: any) => console.error('[ADMIN DEPOSIT SMS ERROR]', err));
       }
     }
   }

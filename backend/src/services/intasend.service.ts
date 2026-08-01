@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import { Database } from '../../server/db';
 import { PaymentTransaction, PaymentStatus, Transaction, Notification } from '../types';
 import { formatIntaSendPhone } from '../utils/intasend';
-import { sendSMS } from '../../server/services/sms';
+import { SMSService } from './sms.service';
 
 export class IntaSendService {
   private static getBaseUrl(): string {
@@ -345,8 +345,7 @@ export class IntaSendService {
     const targetUser = db.users.find(u => u.id === userId);
     const userPhone = paymentTx.phone || targetUser?.phoneNumber;
     if (userPhone) {
-      const smsMsg = `PesaOption\n\nDeposit of KES ${depositAmountKes} received successfully.\n\nYour wallet has been credited.\n\nReference: ${paymentTx.invoiceId}`;
-      sendSMS(userPhone, smsMsg).catch(err => console.error('[INTASEND SMS ERROR]', err));
+      SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes}`, paymentTx.invoiceId).catch(err => console.error('[INTASEND SMS ERROR]', err));
     }
 
     // 5. Commit changes to persistent database

@@ -195,7 +195,7 @@ export interface SystemHealth {
   databaseStatus: 'Healthy' | 'Degraded' | 'Offline';
   databaseSizeKb: number;
   smtpStatus: 'Configured' | 'Unconfigured' | 'Operational';
-  intaSendStatus: 'Configured' | 'Unconfigured' | 'Live Sandbox';
+  intaSendStatus: 'Configured' | 'Unconfigured' | 'Live Environment';
   maintenanceMode: boolean;
   uptimeSeconds: number;
 }

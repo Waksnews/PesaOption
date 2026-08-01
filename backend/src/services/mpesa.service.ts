@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import { Database } from '../../server/db';
 import { MpesaTransaction, MpesaStatus, Transaction, Notification } from '../types';
 import { formatPhoneNumber, generateTimestamp, generatePassword } from '../utils/mpesa';
-import { sendSMS } from '../../server/services/sms';
+import { SMSService } from './sms.service';
 
 export class MpesaService {
   private static getBaseUrl(): string {
@@ -210,8 +210,7 @@ export class MpesaService {
         const userPhone = mpesaTx.phone || targetUser?.phoneNumber;
         if (userPhone) {
           const ref = receiptNumber !== 'N/A' ? receiptNumber : CheckoutRequestID;
-          const smsMsg = `PesaOption\n\nDeposit of KES ${mpesaTx.amount} received successfully.\n\nYour wallet has been credited.\n\nReference: ${ref}`;
-          sendSMS(userPhone, smsMsg).catch(err => console.error('[MPESA SMS ERROR]', err));
+          SMSService.sendDepositSMS(userPhone, `KES ${mpesaTx.amount}`, ref).catch(err => console.error('[MPESA SMS ERROR]', err));
         }
 
         console.log(`[MPESA CALLBACK] Successfully updated wallet and credited $${creditedAmount} USD for User: ${userId}`);
