@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { PrismaClient } from '@prisma/client';
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog,
@@ -46,11 +47,24 @@ const defaultSchema: DatabaseSchema = {
   paymentTransactions: []
 };
 
-// Simple PBKDF2 Password Hashing Utility (built-in, zero external dependencies, ultra-reliable)
+// PBKDF2 Password Hashing Utility
 export function hashPassword(password: string): string {
   const salt = 'cryptonichub_secret_salt_2026';
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512');
   return hash.toString('hex');
+}
+
+// Lazy/safe Prisma client instantiation
+let prismaClientInstance: PrismaClient | null = null;
+export function getPrismaClient(): PrismaClient | null {
+  if (!prismaClientInstance && process.env.DATABASE_URL) {
+    try {
+      prismaClientInstance = new PrismaClient();
+    } catch (e) {
+      console.warn('[DB] Failed to instantiate PrismaClient:', e);
+    }
+  }
+  return prismaClientInstance;
 }
 
 export class Database {
@@ -82,19 +96,23 @@ export class Database {
       }
 
       // Ensure demo USD balances are capped at max $5,000
-    this.data.wallets.forEach(w => {
-      if (w.asset === 'USD' && w.demoBalance > 5000) {
-        w.demoBalance = 5000;
-      }
-    });
+      this.data.wallets.forEach(w => {
+        if (w.asset === 'USD' && w.demoBalance > 5000) {
+          w.demoBalance = 5000;
+        }
+      });
 
-    // Check if owner account exists and ensure its role is set to owner
+      // Ensure owner role
       const ownerAcc = this.data.users.find(u => u.email.toLowerCase() === 'bonayafatuma58@gmail.com');
       if (ownerAcc && ownerAcc.role !== 'owner') {
         ownerAcc.role = 'owner';
         this.save();
         console.log('[DB] Promoted bonayafatuma58@gmail.com to "owner" role');
       }
+
+      // Sync with PostgreSQL if DATABASE_URL is present
+      this.syncFromPostgresIfConfigured();
+
     } catch (error) {
       console.error('[DB] Error loading database, running fallback init:', error);
       this.data = { ...defaultSchema };
@@ -102,14 +120,224 @@ export class Database {
     }
   }
 
+  private async syncFromPostgresIfConfigured() {
+    const prisma = getPrismaClient();
+    if (!prisma) return;
+
+    try {
+      console.log('[DB] Connecting to PostgreSQL via Prisma...');
+      const dbUsers = await prisma.user.findMany({
+        include: {
+          wallets: true,
+          transactions: true,
+          trades: true,
+          supportTickets: { include: { replies: true } },
+          notifications: true,
+          referralCodes: true,
+          referralEarnings: true,
+          activityLogs: true,
+          mpesaTransactions: true,
+          paymentTransactions: true,
+        }
+      });
+
+      if (dbUsers.length > 0) {
+        console.log(`[DB] Loaded ${dbUsers.length} users from PostgreSQL via Prisma.`);
+        // Map users from PostgreSQL to JS format
+        this.data.users = dbUsers.map(u => ({
+          id: u.id,
+          email: u.email,
+          passwordHash: u.passwordHash,
+          fullName: u.fullName,
+          role: u.role as any,
+          phoneNumber: u.phoneNumber || undefined,
+          verified: u.verified,
+          referralCode: u.referralCode,
+          referredBy: u.referredBy || undefined,
+          avatarUrl: u.avatarUrl || undefined,
+          passwordResetToken: u.passwordResetToken || undefined,
+          passwordResetExpires: u.passwordResetExpires ? u.passwordResetExpires.toISOString() : undefined,
+          passwordChangedAt: u.passwordChangedAt ? u.passwordChangedAt.toISOString() : undefined,
+          createdAt: u.createdAt.toISOString()
+        }));
+
+        // Fetch remaining global tables
+        const [announcements, activityLogs] = await Promise.all([
+          prisma.announcement.findMany(),
+          prisma.activityLog.findMany()
+        ]);
+
+        if (announcements.length > 0) {
+          this.data.announcements = announcements.map(a => ({
+            id: a.id,
+            title: a.title,
+            content: a.content,
+            type: a.type as any,
+            createdAt: a.createdAt.toISOString()
+          }));
+        }
+
+        if (activityLogs.length > 0) {
+          this.data.activityLogs = activityLogs.map(a => ({
+            id: a.id,
+            userId: a.userId || undefined,
+            action: a.action,
+            ipAddress: a.ipAddress,
+            details: a.details,
+            createdAt: a.createdAt.toISOString()
+          }));
+        }
+      } else {
+        console.log('[DB] PostgreSQL database empty. Seeding PostgreSQL from local db-store.json (preserving legacy IDs)...');
+        await this.syncToPostgres();
+      }
+    } catch (err) {
+      console.warn('[DB] Prisma sync attempt failed (using db-store fallback):', err);
+    }
+  }
+
+  public async syncToPostgres() {
+    const prisma = getPrismaClient();
+    if (!prisma) return;
+
+    try {
+      // Upsert Users
+      for (const u of this.data.users) {
+        await prisma.user.upsert({
+          where: { id: u.id },
+          update: {
+            email: u.email,
+            passwordHash: u.passwordHash,
+            fullName: u.fullName,
+            role: u.role as any,
+            phoneNumber: u.phoneNumber || null,
+            verified: u.verified,
+            referralCode: u.referralCode,
+            referredBy: u.referredBy || null,
+            avatarUrl: u.avatarUrl || null,
+            passwordResetToken: u.passwordResetToken || null,
+            passwordResetExpires: u.passwordResetExpires ? new Date(u.passwordResetExpires) : null,
+            passwordChangedAt: u.passwordChangedAt ? new Date(u.passwordChangedAt) : null,
+          },
+          create: {
+            id: u.id,
+            email: u.email,
+            passwordHash: u.passwordHash,
+            fullName: u.fullName,
+            role: u.role as any,
+            phoneNumber: u.phoneNumber || null,
+            verified: u.verified,
+            referralCode: u.referralCode,
+            referredBy: u.referredBy || null,
+            avatarUrl: u.avatarUrl || null,
+            passwordResetToken: u.passwordResetToken || null,
+            passwordResetExpires: u.passwordResetExpires ? new Date(u.passwordResetExpires) : null,
+            passwordChangedAt: u.passwordChangedAt ? new Date(u.passwordChangedAt) : null,
+            createdAt: u.createdAt ? new Date(u.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Wallets
+      for (const w of this.data.wallets) {
+        await prisma.wallet.upsert({
+          where: { id: w.id },
+          update: {
+            balance: w.balance,
+            demoBalance: w.demoBalance,
+            updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
+          },
+          create: {
+            id: w.id,
+            userId: w.userId,
+            asset: w.asset,
+            balance: w.balance,
+            demoBalance: w.demoBalance,
+            updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Transactions
+      for (const t of this.data.transactions) {
+        await prisma.transaction.upsert({
+          where: { id: t.id },
+          update: {
+            amount: t.amount,
+            status: t.status as any,
+            txHash: t.txHash || '',
+            description: t.description || '',
+            phone: t.phone || null
+          },
+          create: {
+            id: t.id,
+            userId: t.userId,
+            walletId: t.walletId,
+            type: t.type as any,
+            asset: t.asset || 'USD',
+            amount: t.amount,
+            status: t.status as any,
+            txHash: t.txHash || '',
+            description: t.description || '',
+            phone: t.phone || null,
+            createdAt: t.createdAt ? new Date(t.createdAt) : new Date()
+          }
+        });
+      }
+
+      // Upsert Trades
+      for (const tr of this.data.trades) {
+        await prisma.trade.upsert({
+          where: { id: tr.id },
+          update: {
+            quantity: tr.quantity,
+            entryPrice: tr.entryPrice,
+            exitPrice: tr.exitPrice != null ? tr.exitPrice : null,
+            status: tr.status as any,
+            pnl: tr.pnl,
+            isDemo: tr.isDemo,
+            closedAt: tr.closedAt ? new Date(tr.closedAt) : null
+          },
+          create: {
+            id: tr.id,
+            userId: tr.userId,
+            type: tr.type as any,
+            symbol: tr.symbol,
+            quantity: tr.quantity,
+            entryPrice: tr.entryPrice,
+            exitPrice: tr.exitPrice != null ? tr.exitPrice : null,
+            status: tr.status as any,
+            pnl: tr.pnl,
+            isDemo: tr.isDemo,
+            createdAt: tr.createdAt ? new Date(tr.createdAt) : new Date(),
+            closedAt: tr.closedAt ? new Date(tr.closedAt) : null,
+            contractType: (tr.contractType as any) || 'spot',
+            prediction: tr.prediction || null,
+            durationSeconds: tr.durationSeconds || null,
+            expiryTime: tr.expiryTime ? new Date(tr.expiryTime) : null,
+            barrier: tr.barrier != null ? tr.barrier : null,
+            payoutRate: tr.payoutRate != null ? tr.payoutRate : null,
+            settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : null
+          }
+        });
+      }
+
+      console.log('[DB] Synchronized all data to PostgreSQL via Prisma successfully.');
+    } catch (err) {
+      console.warn('[DB] Error saving to PostgreSQL via Prisma:', err);
+    }
+  }
+
   public save() {
     try {
-      // Ensure directory exists
       const dir = path.dirname(DB_FILE);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+
+      // Async background sync to PostgreSQL if connected
+      this.syncToPostgres().catch(e => console.warn('[DB] Async Postgres sync error:', e));
     } catch (error) {
       console.error('[DB] Error saving database:', error);
     }
@@ -133,7 +361,6 @@ export class Database {
   private seed() {
     console.log('[DB] Seeding database with high-fidelity demo data...');
 
-    // 1. Create standard trader user
     const traderId = 'trader_user_1';
     const traderPass = hashPassword('user123');
     const traderUser: User = {
@@ -146,10 +373,9 @@ export class Database {
       referralCode: 'ALEX500',
       referredBy: undefined,
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-      createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString() // 30 days ago
+      createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
     };
 
-    // 2. Create admin user
     const adminId = 'admin_user_1';
     const adminPass = hashPassword('admin123');
     const adminUser: User = {
@@ -167,17 +393,14 @@ export class Database {
 
     this.data.users.push(traderUser, adminUser);
 
-    // 3. Create wallets for users
     const wallets: Wallet[] = [
       { id: 'w1', userId: traderId, asset: 'USD', balance: 2500, demoBalance: 5000, updatedAt: new Date().toISOString() },
       { id: 'w2', userId: traderId, asset: 'BTC', balance: 0.15, demoBalance: 1.5, updatedAt: new Date().toISOString() },
       { id: 'w3', userId: traderId, asset: 'ETH', balance: 1.25, demoBalance: 12.0, updatedAt: new Date().toISOString() },
-      
       { id: 'w4', userId: adminId, asset: 'USD', balance: 1250000, demoBalance: 5000, updatedAt: new Date().toISOString() },
     ];
     this.data.wallets.push(...wallets);
 
-    // 4. Create announcement entries
     const announcements: Announcement[] = [
       {
         id: 'ann_1',
@@ -196,7 +419,6 @@ export class Database {
     ];
     this.data.announcements.push(...announcements);
 
-    // 5. Create default trade history for user (alex) to populate beautiful charts & stats
     const trades: Trade[] = [
       {
         id: 'tr_1',
@@ -240,7 +462,6 @@ export class Database {
         createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
         closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString()
       },
-      // Open trade
       {
         id: 'tr_4',
         userId: traderId,
@@ -249,14 +470,13 @@ export class Database {
         quantity: 0.2,
         entryPrice: 64200,
         status: 'open',
-        pnl: 120, // floating
+        pnl: 120,
         isDemo: true,
         createdAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString()
       }
     ];
     this.data.trades.push(...trades);
 
-    // 6. Create notifications
     const notifications: Notification[] = [
       {
         id: 'not_1',
@@ -277,7 +497,6 @@ export class Database {
     ];
     this.data.notifications.push(...notifications);
 
-    // 7. Create transaction logs (deposit / withdrawal)
     const transactions: Transaction[] = [
       {
         id: 'tx_1',
@@ -306,7 +525,6 @@ export class Database {
     ];
     this.data.transactions.push(...transactions);
 
-    // 8. Support Tickets
     const supportTickets: SupportTicket[] = [
       {
         id: 't_1',
@@ -350,13 +568,11 @@ export class Database {
     ];
     this.data.supportTickets.push(...supportTickets);
 
-    // 9. Referral codes & activities
     const referralCodes: ReferralCode[] = [
       { id: 'ref_1', userId: traderId, code: 'ALEX500', createdAt: new Date(Date.now() - 25 * 24 * 3600 * 1000).toISOString() }
     ];
     this.data.referralCodes.push(...referralCodes);
 
-    // Activity Logs
     const activityLogs: ActivityLog[] = [
       { id: 'al_1', userId: traderId, action: 'User Sign In', ipAddress: '192.168.1.5', details: 'Successful desktop logon session.', createdAt: new Date().toISOString() }
     ];

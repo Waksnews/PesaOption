@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "build": "prisma generate --schema=prisma/schema.prisma && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "npx prisma migrate deploy --schema=prisma/schema.prisma || true && node dist/server.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@prisma/client": "6.4.1",
     "africastalking": "^0.8.2",
     "axios": "^1.18.1",
     "dotenv": "^17.2.3",
@@ -22,6 +23,7 @@
     "@types/node": "^22.14.0",
     "@types/nodemailer": "^8.0.1",
     "esbuild": "^0.25.0",
+    "prisma": "6.4.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }

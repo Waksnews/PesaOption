@@ -1,0 +1,311 @@
+// Prisma Schema for CryptonicHub / PesaOption Trading Platform
+// Direct PostgreSQL replacement for db-store.json
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+  owner
+}
+
+enum TransactionType {
+  deposit
+  withdrawal
+  trade_buy
+  trade_sell
+  referral_bonus
+  trade_win
+  trade_loss
+  admin_credit
+  admin_debit
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  rejected
+}
+
+enum TradeType {
+  buy
+  sell
+}
+
+enum TradeStatus {
+  open
+  closed
+}
+
+enum ContractType {
+  spot
+  rise_fall
+  even_odd
+  over_under
+  matches_differ
+}
+
+enum MpesaStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  Pending
+  Completed
+  Failed
+  Cancelled
+}
+
+model User {
+  id                   String            @id @default(uuid())
+  email                String            @unique
+  passwordHash         String            @map("password_hash")
+  fullName             String            @map("full_name")
+  role                 UserRole          @default(user)
+  phoneNumber          String?           @map("phone_number")
+  verified             Boolean           @default(false)
+  referralCode         String            @unique @map("referral_code")
+  referredBy           String?           @map("referred_by")
+  avatarUrl            String?           @map("avatar_url")
+  passwordResetToken   String?           @map("password_reset_token")
+  passwordResetExpires DateTime?         @map("password_reset_expires")
+  passwordChangedAt    DateTime?         @map("password_changed_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+
+  wallets              Wallet[]
+  transactions         Transaction[]
+  trades               Trade[]
+  supportTickets       SupportTicket[]
+  ticketReplies        TicketReply[]
+  notifications        Notification[]
+  referralCodes        ReferralCode[]
+  referralEarnings     ReferralEarning[] @relation("UserReferralEarnings")
+  activityLogs         ActivityLog[]
+  mpesaTransactions    MpesaTransaction[]
+  paymentTransactions  PaymentTransaction[]
+
+  @@index([email])
+  @@index([referralCode])
+  @@index([passwordResetToken], map: "idx_users_password_reset_token")
+  @@map("users")
+}
+
+model Wallet {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  asset        String   @default("USD")
+  balance      Decimal  @default(0.00) @db.Decimal(18, 8)
+  demoBalance  Decimal  @default(5000.00) @map("demo_balance") @db.Decimal(18, 8)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, asset])
+  @@map("wallets")
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  userId      String            @map("user_id")
+  walletId    String            @map("wallet_id")
+  type        TransactionType
+  asset       String            @default("USD")
+  amount      Decimal           @db.Decimal(18, 8)
+  status      TransactionStatus @default(pending)
+  txHash      String            @default("") @map("tx_hash")
+  description String            @default("")
+  phone       String?
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet      Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([status])
+  @@map("transactions")
+}
+
+model Trade {
+  id              String       @id @default(uuid())
+  userId          String       @map("user_id")
+  type            TradeType
+  symbol          String
+  quantity        Decimal      @db.Decimal(18, 8)
+  entryPrice      Decimal      @map("entry_price") @db.Decimal(18, 8)
+  exitPrice       Decimal?     @map("exit_price") @db.Decimal(18, 8)
+  status          TradeStatus  @default(open)
+  pnl             Decimal      @default(0.00) @db.Decimal(18, 8)
+  isDemo          Boolean      @default(true) @map("is_demo")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  closedAt        DateTime?    @map("closed_at")
+
+  contractType    ContractType @default(spot) @map("contract_type")
+  prediction      String?
+  durationSeconds Int?         @map("duration_seconds")
+  expiryTime      DateTime?    @map("expiry_time")
+  barrier         Decimal?     @db.Decimal(18, 8)
+  payoutRate      Decimal?     @map("payout_rate") @db.Decimal(8, 4)
+  settlementDigit Int?         @map("settlement_digit")
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([isDemo])
+  @@map("trades")
+}
+
+model SupportTicket {
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  userEmail   String        @map("user_email")
+  fullName    String        @map("full_name")
+  title       String
+  description String
+  status      String        @default("open")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies     TicketReply[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+model TicketReply {
+  id        String        @id @default(uuid())
+  ticketId  String        @map("ticket_id")
+  userId    String        @map("user_id")
+  fullName  String        @map("full_name")
+  role      UserRole      @default(user)
+  message   String
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_replies")
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  type      String   @default("info")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("announcements")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+model ReferralCode {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("referral_codes")
+}
+
+model ReferralEarning {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  referrerId  String   @map("referrer_id")
+  amount      Decimal  @db.Decimal(18, 8)
+  description String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user        User     @relation("UserReferralEarnings", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([referrerId])
+  @@map("referral_earnings")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  ipAddress String   @default("") @map("ip_address")
+  details   String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model MpesaTransaction {
+  id                String      @id @default(uuid())
+  userId            String      @map("user_id")
+  phone             String
+  amount            Decimal     @db.Decimal(18, 2)
+  merchantRequestId String      @map("merchant_request_id")
+  checkoutRequestId String      @unique @map("checkout_request_id")
+  receiptNumber     String?     @map("receipt_number")
+  status            MpesaStatus @default(PENDING)
+  resultCode        Int?        @map("result_code")
+  resultDesc        String?     @map("result_desc")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([merchantRequestId])
+  @@map("mpesa_transactions")
+}
+
+model PaymentTransaction {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  invoiceId     String        @unique @map("invoice_id")
+  provider      String        @default("intasend")
+  paymentMethod String        @default("M-PESA") @map("payment_method")
+  phone         String        @default("")
+  amount        Decimal       @default(0.00) @db.Decimal(16, 2)
+  currency      String        @default("KES")
+  status        PaymentStatus @default(Pending)
+  reference     String?       @default("")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_payment_tx_user_id")
+  @@index([invoiceId], map: "idx_payment_tx_invoice_id")
+  @@index([status], map: "idx_payment_tx_status")
+  @@map("payment_transactions")
+}
