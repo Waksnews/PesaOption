@@ -5,7 +5,52 @@
 
 import AfricasTalking from 'africastalking';
 
+/**
+ * Normalizes a Kenyan phone number to standard international format required by Africa's Talking: 254XXXXXXXXX
+ * 
+ * Accepted inputs:
+ * - 0712345678 -> 254712345678
+ * - 0111449572 -> 254111449572
+ * - +254712345678 -> 254712345678
+ * - 254712345678 -> 254712345678
+ * 
+ * Always outputs: 254712345678 (or 254111449572)
+ * Returns null if the phone number is invalid.
+ */
+export function normalizeKenyanPhoneNumber(phone?: string | null): string | null {
+  if (!phone || typeof phone !== 'string') {
+    return null;
+  }
+
+  const trimmed = phone.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  // Remove all non-digit characters
+  const digits = trimmed.replace(/\D/g, '');
+
+  // 1. Local 10-digit format starting with 07 or 01 (e.g. 0712345678, 0111449572)
+  if (/^0[17]\d{8}$/.test(digits)) {
+    return `254${digits.slice(1)}`;
+  }
+
+  // 2. Full 12-digit format starting with 2547 or 2541 (e.g. 254712345678, 254111449572)
+  if (/^254[17]\d{8}$/.test(digits)) {
+    return digits;
+  }
+
+  // 3. 9-digit format starting with 7 or 1 (e.g. 712345678, 111449572)
+  if (/^[17]\d{8}$/.test(digits)) {
+    return `254${digits}`;
+  }
+
+  return null;
+}
+
 export class SMSService {
+  public static normalizeKenyanPhoneNumber = normalizeKenyanPhoneNumber;
+
   private static getClient() {
     const username = process.env.AFRICASTALKING_USERNAME;
     const apiKey = process.env.AFRICASTALKING_API_KEY;
@@ -27,21 +72,30 @@ export class SMSService {
 
   /**
    * Sends an SMS message to a given recipient.
-   * If Africa's Talking credentials are not set up, it logs a clean placeholder without throwing errors.
+   * Validates and normalizes phone number prior to sending.
    */
   public static async sendSMS(phone: string, message: string): Promise<boolean> {
+    const normalizedPhone = normalizeKenyanPhoneNumber(phone);
+
+    if (!normalizedPhone) {
+      console.log('[SMS] Invalid phone number');
+      return false;
+    }
+
+    console.log(`[SMS] Sending to ${normalizedPhone}`);
+
     const smsClient = this.getClient();
 
     if (smsClient) {
       try {
         const result = await smsClient.send({
-          to: [phone],
+          to: [normalizedPhone],
           message,
         });
-        console.log(`[SMS SERVICE] Message successfully dispatched to ${phone}:`, result);
+        console.log(`[SMS SERVICE] Message successfully dispatched to ${normalizedPhone}:`, result);
         return true;
       } catch (error: any) {
-        console.error(`[SMS SERVICE ERROR] Error sending SMS to ${phone}:`, error?.message || error);
+        console.error(`[SMS SERVICE ERROR] Error sending SMS to ${normalizedPhone}:`, error?.message || error);
         return false;
       }
     }
@@ -49,7 +103,7 @@ export class SMSService {
     // Placeholder fallback when credentials are not supplied
     console.log(`\n==================================================`);
     console.log(`[SMS PLACEHOLDER]`);
-    console.log(`Recipient: ${phone}`);
+    console.log(`Recipient: ${normalizedPhone}`);
     console.log(`Message: ${message}`);
     console.log(`==================================================\n`);
     return true;

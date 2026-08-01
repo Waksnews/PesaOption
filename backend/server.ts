@@ -511,6 +511,12 @@ app.post('/api/auth/register', (req, res) => {
   logActivity(userId, 'User Registration', `Registered account for ${email}`, req);
   createNotification(userId, 'Account Provisioned', 'Welcome to CryptonicHub. Your virtual trading accounts have been successfully setup.');
 
+  if (newUser.phoneNumber) {
+    SMSService.sendWelcomeSMS(newUser.phoneNumber, newUser.fullName).catch(err =>
+      console.error('[WELCOME SMS ERROR]', err)
+    );
+  }
+
   const token = generateSessionToken(userId, assignedRole);
   res.status(201).json({ token, user: { id: userId, email: newUser.email, fullName: newUser.fullName, role: assignedRole, phoneNumber: newUser.phoneNumber, referralCode: myRefCode, avatarUrl: newUser.avatarUrl } });
 });

@@ -7,6 +7,7 @@ import { Request, Response } from 'express';
 import { Database, hashPassword } from '../../server/db';
 import { generateRandomToken, hashToken, validatePasswordStrength } from '../utils/token';
 import { EmailService } from '../services/email.service';
+import { SMSService } from '../services/sms.service';
 
 export class PasswordResetController {
   /**
@@ -48,6 +49,13 @@ export class PasswordResetController {
           user.fullName || user.email.split('@')[0],
           resetUrl
         );
+
+        // Send SMS via SMSService if phone number exists
+        if (user.phoneNumber) {
+          SMSService.sendPasswordResetSMS(user.phoneNumber, resetUrl).catch(err =>
+            console.error('[PASSWORD RESET SMS ERROR]', err)
+          );
+        }
       }
 
       return res.status(200).json({ message: genericSuccessMsg });
