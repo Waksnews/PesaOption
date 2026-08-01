@@ -19,6 +19,7 @@ import webhookRouter from './src/routes/webhook.routes';
 import passwordRouter from './src/routes/password.routes';
 import { SMSService } from './src/services/sms.service';
 import { EmailService } from './src/services/email.service';
+import { authenticate, generateSessionToken, verifySessionToken } from './src/middleware/auth.middleware';
 
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI | null {
@@ -58,90 +59,6 @@ app.use('/api/webhooks', webhookRouter);
 app.use('/api/auth', passwordRouter);
 
 const db = Database.getInstance();
-
-// Simple JWT-like Session Token System
-// Format: userId_role_expiresTimestamp_issuedAt_signature
-const SESSION_SECRET = 'cryptonichub_secret_session_key_2026';
-
-function generateSessionToken(userId: string, role: string): string {
-  const issuedAt = Date.now();
-  const expires = issuedAt + 24 * 3600 * 1000; // 24 hours
-  const payload = `${userId}:${role}:${expires}:${issuedAt}`;
-  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-  return Buffer.from(`${payload}:${signature}`).toString('base64');
-}
-
-function verifySessionToken(token: string): { userId: string; role: string } | null {
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const parts = decoded.split(':');
-    
-    let userId: string, role: string, expiresStr: string, signature: string;
-    let issuedAt: number = 0;
-
-    if (parts.length === 5) {
-      [userId, role, expiresStr, issuedAt as any, signature] = parts;
-      issuedAt = parseInt(issuedAt as any, 10);
-    } else {
-      [userId, role, expiresStr, signature] = parts;
-    }
-
-    const expires = parseInt(expiresStr, 10);
-    
-    if (Date.now() > expires) {
-      return null; // Expired
-    }
-
-    const payload = parts.length === 5 ? `${userId}:${role}:${expires}:${issuedAt}` : `${userId}:${role}:${expires}`;
-    const expectedSignature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-    
-    if (signature === expectedSignature) {
-      // Check if user has reset password after this session token was issued
-      const user = db.users.find(u => u.id === userId);
-      if (user && user.passwordChangedAt && issuedAt) {
-        const passwordChangedTime = new Date(user.passwordChangedAt).getTime();
-        if (issuedAt < passwordChangedTime) {
-          console.log(`[AUTH] Session token invalidated due to recent password reset for user: ${userId}`);
-          return null;
-        }
-      }
-      return { userId, role };
-    }
-  } catch (e) {
-    // Ignore
-  }
-  return null;
-}
-
-// Authentication Middleware
-function authenticate(req: any, res: any, next: any) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized. No session token provided.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  const session = verifySessionToken(token);
-  
-  if (!session) {
-    return res.status(401).json({ error: 'Session expired or invalid.' });
-  }
-
-  req.userId = session.userId;
-  
-  // Dynamically resolve up-to-date role from DB
-  const user = db.users.find(u => u.id === session.userId);
-  if (user) {
-    if (user.email.toLowerCase() === 'bonayafatuma58@gmail.com' && user.role !== 'owner') {
-      user.role = 'owner';
-      db.save();
-    }
-    req.userRole = user.role;
-  } else {
-    req.userRole = session.role;
-  }
-  next();
-}
 
 // Admin Verification Middleware (Allows both 'admin' and 'owner')
 function requireAdmin(req: any, res: any, next: any) {
@@ -545,6 +462,7 @@ app.post('/api/auth/login', (req, res) => {
     console.log('[AUTH] Promoted bonayafatuma58@gmail.com to owner role on login.');
   }
 
+  console.log('[AUTH] Login success');
   const token = generateSessionToken(user.id, user.role);
   logActivity(user.id, 'User Login', 'Successfully authenticated and session established.', req);
 

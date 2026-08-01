@@ -17,8 +17,11 @@ export class PaymentController {
     const userId = req.userId;
 
     if (!userId) {
+      console.warn('[AUTH] Missing or invalid user in deposit request');
       return res.status(401).json({ error: 'Unauthorized user.' });
     }
+
+    console.log(`[AUTH] Deposit request accepted for user: ${userId}`);
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
