@@ -182,6 +182,29 @@ export interface PaymentTransaction {
   updatedAt: string;
 }
 
+export type WithdrawalRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'FAILED';
+
+export interface WithdrawalRequest {
+  id: string;
+  referenceId: string;
+  userId: string;
+  walletId: string;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  phoneNumber?: string;
+  accountDetails?: string;
+  status: WithdrawalRequestStatus;
+  remarks?: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  userEmail?: string;
+  userName?: string;
+}
+
 export interface OwnerStats {
   totalUsers: number;
   totalAdmins: number;

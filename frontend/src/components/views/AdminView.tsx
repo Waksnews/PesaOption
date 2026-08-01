@@ -12,21 +12,29 @@ import {
   ShieldCheck, Wallet, ArrowDownLeft, ArrowUpRight, RefreshCw, 
   Users, History, Search, CheckCircle2, AlertCircle, PlusCircle, 
   MinusCircle, Sparkles, FileText, Megaphone, Trash2, Shield,
-  Crown, Server, Activity, Database, Lock, Key, Mail, Cpu, Settings
+  Crown, Server, Activity, Database, Lock, Key, Mail, Cpu, Settings, X
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
 export const AdminView: React.FC = () => {
   const { 
     user, adminData, fetchAdminData, adminAdjustWallet, adminChangeRole, adminCreateAnnouncement, adminDeleteAnnouncement,
-    ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
+    ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig,
+    adminApproveWithdrawal, adminRejectWithdrawal
   } = useApp();
   const { addToast } = useNotificationStore();
   const { currency } = useSettingsStore();
 
-  const [activeTab, setActiveTab] = useState<'owner' | 'wallet' | 'users' | 'trades' | 'announcements' | 'logs'>(
-    user?.role === 'owner' ? 'owner' : 'wallet'
+  const [activeTab, setActiveTab] = useState<'owner' | 'wallet' | 'withdrawals' | 'users' | 'trades' | 'announcements' | 'logs'>(
+    user?.role === 'owner' ? 'owner' : 'withdrawals'
   );
+  
+  // Withdrawal Management State
+  const [withdrawalFilter, setWithdrawalFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('PENDING');
+  const [withdrawalSearch, setWithdrawalSearch] = useState<string>('');
+  const [rejectingReq, setRejectingReq] = useState<any | null>(null);
+  const [rejectRemarksInput, setRejectRemarksInput] = useState<string>('');
+  const [processingWreqId, setProcessingWreqId] = useState<string | null>(null);
   
   // Owner Platform Config Form State
   const [cfgSmtpHost, setCfgSmtpHost] = useState(ownerConfig?.smtpHost || 'smtp.pesaoption.com');
@@ -236,6 +244,12 @@ export const AdminView: React.FC = () => {
         <div className="flex flex-wrap gap-2 pt-6 border-t border-slate-850/80 mt-6">
           {[
             ...(user?.role === 'owner' ? [{ id: 'owner', label: 'Owner Dashboard', icon: Crown, badge: 'OWNER' }] : []),
+            { 
+              id: 'withdrawals', 
+              label: 'Withdrawal Requests', 
+              icon: ArrowUpRight, 
+              badge: (adminData.withdrawalRequests || []).filter(w => w.status === 'PENDING').length 
+            },
             { id: 'wallet', label: 'Wallet Manager', icon: Wallet, badge: registeredUsers.length },
             { id: 'users', label: 'Registered Users', icon: Users, badge: registeredUsers.length },
             { id: 'trades', label: 'Trading Desk Oversight', icon: History, badge: adminData.trades?.length || 0 },
@@ -603,6 +617,330 @@ export const AdminView: React.FC = () => {
             )}
           </div>
 
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: WITHDRAWAL REQUESTS MANAGER */}
+      {/* ========================================================================= */}
+      {activeTab === 'withdrawals' && (
+        <div className="space-y-6">
+          
+          {/* Header & Stats Banner */}
+          <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-850">
+              <div>
+                <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide flex items-center space-x-2">
+                  <ArrowUpRight className="w-5 h-5 text-amber-400" />
+                  <span>Withdrawal Requests & Finance Review</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Manage user payout orders. Approvals dispatch live SMS & Email notifications to traders. Rejections instantly refund the reserved balance.
+                </p>
+              </div>
+
+              <button
+                onClick={() => fetchAdminData()}
+                className="flex items-center space-x-2 px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 rounded-xl text-xs font-bold text-slate-300 transition cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
+                <span>Refresh Requests</span>
+              </button>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-amber-500/20 space-y-1">
+                <span className="text-[10px] font-mono text-amber-400 font-bold uppercase">Pending Review</span>
+                <p className="text-xl font-mono font-black text-amber-300">
+                  {(adminData.withdrawalRequests || []).filter(w => w.status === 'PENDING').length}
+                </p>
+                <p className="text-[10px] font-mono text-slate-500">
+                  Total: ${(adminData.withdrawalRequests || []).filter(w => w.status === 'PENDING').reduce((acc, w) => acc + w.amount, 0).toLocaleString()} USD
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
+                <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase">Approved & Paid</span>
+                <p className="text-xl font-mono font-black text-emerald-300">
+                  {(adminData.withdrawalRequests || []).filter(w => w.status === 'APPROVED' || w.status === 'COMPLETED').length}
+                </p>
+                <p className="text-[10px] font-mono text-slate-500">
+                  Dispatched: ${(adminData.withdrawalRequests || []).filter(w => w.status === 'APPROVED' || w.status === 'COMPLETED').reduce((acc, w) => acc + w.amount, 0).toLocaleString()} USD
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-rose-500/20 space-y-1">
+                <span className="text-[10px] font-mono text-rose-400 font-bold uppercase">Rejected / Refunded</span>
+                <p className="text-xl font-mono font-black text-rose-300">
+                  {(adminData.withdrawalRequests || []).filter(w => w.status === 'REJECTED').length}
+                </p>
+                <p className="text-[10px] font-mono text-slate-500">
+                  Restored to balance
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">Total Requests</span>
+                <p className="text-xl font-mono font-black text-slate-100">
+                  {(adminData.withdrawalRequests || []).length}
+                </p>
+                <p className="text-[10px] font-mono text-slate-500">
+                  Audit Ledger
+                </p>
+              </div>
+            </div>
+
+            {/* Controls & Filter Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+              <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-850 overflow-x-auto">
+                {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map(st => (
+                  <button
+                    key={st}
+                    onClick={() => setWithdrawalFilter(st)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-bold transition cursor-pointer ${
+                      withdrawalFilter === st
+                        ? st === 'PENDING' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : st === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : st === 'REJECTED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                    }`}
+                  >
+                    {st} ({(adminData.withdrawalRequests || []).filter(w => st === 'ALL' ? true : st === 'APPROVED' ? (w.status === 'APPROVED' || w.status === 'COMPLETED') : w.status === st).length})
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Box */}
+              <div className="relative flex-1 sm:max-w-xs">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search Ref, Email, Method..."
+                  value={withdrawalSearch}
+                  onChange={e => setWithdrawalSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/40"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Rejection Modal / Dialog */}
+          {rejectingReq && (
+            <div className="bg-rose-950/30 border border-rose-500/40 rounded-2xl p-5 shadow-2xl space-y-4 animate-fade-in">
+              <div className="flex justify-between items-center pb-2 border-b border-rose-500/20">
+                <div className="flex items-center space-x-2">
+                  <MinusCircle className="w-5 h-5 text-rose-400" />
+                  <h3 className="font-bold text-rose-200 text-sm">Reject Withdrawal Request: {rejectingReq.referenceId}</h3>
+                </div>
+                <button 
+                  onClick={() => { setRejectingReq(null); setRejectRemarksInput(''); }}
+                  className="p-1 hover:bg-slate-900 text-slate-400 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-300 space-y-1">
+                <p>User: <span className="font-bold text-slate-100">{rejectingReq.userName || rejectingReq.userEmail}</span></p>
+                <p>Amount to restore: <span className="font-mono font-bold text-emerald-400">${rejectingReq.amount} {rejectingReq.currency}</span></p>
+                <p>Payment Method: <span className="font-mono text-slate-300">{rejectingReq.paymentMethod}</span> ({rejectingReq.accountDetails || rejectingReq.phoneNumber || 'N/A'})</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-mono text-slate-400 font-bold">Reason for Rejection (Included in SMS & Email)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Unverified payment details or requested by trader"
+                  value={rejectRemarksInput}
+                  onChange={e => setRejectRemarksInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500/50"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setRejectingReq(null); setRejectRemarksInput(''); }}
+                  className="px-4 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 rounded-xl text-xs font-bold text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={processingWreqId === rejectingReq.id}
+                  onClick={async () => {
+                    setProcessingWreqId(rejectingReq.id);
+                    const success = await adminRejectWithdrawal(rejectingReq.id, rejectRemarksInput);
+                    setProcessingWreqId(null);
+                    if (success) {
+                      addToast('Withdrawal Rejected', `Request ${rejectingReq.referenceId} rejected and $${rejectingReq.amount} restored to user.`, 'info');
+                      setRejectingReq(null);
+                      setRejectRemarksInput('');
+                    } else {
+                      addToast('Rejection Failed', 'Could not reject request.', 'error');
+                    }
+                  }}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition cursor-pointer flex items-center space-x-1.5"
+                >
+                  {processingWreqId === rejectingReq.id ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <MinusCircle className="w-3.5 h-3.5" />
+                  )}
+                  <span>Confirm Rejection & Restore Balance</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Requests Table */}
+          <div className="bg-[#090D1A] border border-slate-850 rounded-2xl overflow-hidden shadow-xl">
+            {(() => {
+              const filtered = (adminData.withdrawalRequests || [])
+                .filter(w => {
+                  if (withdrawalFilter !== 'ALL') {
+                    if (withdrawalFilter === 'APPROVED') {
+                      if (w.status !== 'APPROVED' && w.status !== 'COMPLETED') return false;
+                    } else if (w.status !== withdrawalFilter) {
+                      return false;
+                    }
+                  }
+                  if (withdrawalSearch.trim()) {
+                    const q = withdrawalSearch.toLowerCase();
+                    const matchRef = w.referenceId.toLowerCase().includes(q);
+                    const matchEmail = (w.userEmail || '').toLowerCase().includes(q);
+                    const matchName = (w.userName || '').toLowerCase().includes(q);
+                    const matchMethod = w.paymentMethod.toLowerCase().includes(q);
+                    return matchRef || matchEmail || matchName || matchMethod;
+                  }
+                  return true;
+                });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="py-12 text-center text-slate-500 space-y-2">
+                    <ArrowUpRight className="w-8 h-8 text-slate-700 mx-auto" />
+                    <p className="font-bold text-sm">No withdrawal requests found</p>
+                    <p className="text-xs text-slate-600">No payout orders match your active status or search query.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/80 border-b border-slate-850 text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                        <th className="py-3 px-4">Ref ID</th>
+                        <th className="py-3 px-4">Trader Account</th>
+                        <th className="py-3 px-4 text-right">Requested Amount</th>
+                        <th className="py-3 px-4">Channel / Method</th>
+                        <th className="py-3 px-4">Payout Account</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Created Date</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850 text-xs">
+                      {filtered.map(w => {
+                        const isPending = w.status === 'PENDING';
+                        const isApproved = w.status === 'APPROVED' || w.status === 'COMPLETED';
+                        const isRejected = w.status === 'REJECTED';
+
+                        return (
+                          <tr key={w.id} className="hover:bg-slate-900/50 transition">
+                            <td className="py-3.5 px-4 font-mono font-bold text-teal-400">
+                              {w.referenceId}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <p className="font-bold text-slate-200">{w.userName || 'Trader'}</p>
+                              <p className="text-[10px] font-mono text-slate-400">{w.userEmail || 'N/A'}</p>
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-mono font-black text-slate-100">
+                              ${w.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {w.currency || 'USD'}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="px-2 py-0.5 bg-slate-950 border border-slate-800 rounded text-[11px] font-mono font-bold text-slate-300 uppercase">
+                                {w.paymentMethod}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-[11px] text-slate-300">
+                              {w.accountDetails || w.phoneNumber || 'Default Account'}
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {isPending && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-mono text-[10px] font-bold uppercase rounded-full animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                  <span>PENDING REVIEW</span>
+                                </span>
+                              )}
+                              {isApproved && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold uppercase rounded-full">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>APPROVED</span>
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-500/10 border border-rose-500/30 text-rose-400 font-mono text-[10px] font-bold uppercase rounded-full">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>REJECTED</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-[10px] text-slate-400">
+                              {new Date(w.createdAt).toLocaleString()}
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              {isPending ? (
+                                <div className="flex items-center justify-end space-x-2">
+                                  <button
+                                    disabled={processingWreqId === w.id}
+                                    onClick={async () => {
+                                      setProcessingWreqId(w.id);
+                                      const ok = await adminApproveWithdrawal(w.id);
+                                      setProcessingWreqId(null);
+                                      if (ok) {
+                                        addToast('Withdrawal Approved', `Request ${w.referenceId} approved & notifications sent.`, 'success');
+                                      } else {
+                                        addToast('Approval Failed', 'Failed to approve request.', 'error');
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] uppercase rounded-lg transition cursor-pointer flex items-center space-x-1 shadow-md shadow-emerald-500/10"
+                                  >
+                                    {processingWreqId === w.id ? (
+                                      <RefreshCw className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 className="w-3 h-3" />
+                                    )}
+                                    <span>Approve</span>
+                                  </button>
+                                  <button
+                                    disabled={processingWreqId === w.id}
+                                    onClick={() => setRejectingReq(w)}
+                                    className="px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-400 font-bold text-[11px] uppercase rounded-lg transition cursor-pointer flex items-center space-x-1"
+                                  >
+                                    <MinusCircle className="w-3 h-3" />
+                                    <span>Reject</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-mono text-slate-500 italic">
+                                  {isApproved ? `Approved` : `Rejected`}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 

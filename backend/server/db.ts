@@ -10,7 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog,
-  MpesaTransaction, PaymentTransaction
+  MpesaTransaction, PaymentTransaction, WithdrawalRequest
 } from '../src/types';
 
 const DB_FILE = fs.existsSync(path.join(process.cwd(), 'backend')) 
@@ -30,6 +30,7 @@ export interface DatabaseSchema {
   activityLogs: ActivityLog[];
   mpesaTransactions: MpesaTransaction[];
   paymentTransactions: PaymentTransaction[];
+  withdrawalRequests: WithdrawalRequest[];
 }
 
 const defaultSchema: DatabaseSchema = {
@@ -44,7 +45,8 @@ const defaultSchema: DatabaseSchema = {
   referralEarnings: [],
   activityLogs: [],
   mpesaTransactions: [],
-  paymentTransactions: []
+  paymentTransactions: [],
+  withdrawalRequests: []
 };
 
 // PBKDF2 Password Hashing Utility
@@ -104,7 +106,7 @@ export class Database {
           const [
             users, wallets, transactions, trades, supportTickets,
             announcements, notifications, referralCodes, referralEarnings,
-            activityLogs, mpesaTxs, paymentTxs
+            activityLogs, mpesaTxs, paymentTxs, withdrawalReqs
           ] = await Promise.all([
             prisma.user.findMany(),
             prisma.wallet.findMany(),
@@ -118,6 +120,7 @@ export class Database {
             prisma.activityLog.findMany(),
             prisma.mpesaTransaction.findMany(),
             prisma.paymentTransaction.findMany(),
+            prisma.withdrawalRequest.findMany(),
           ]);
 
           this.data.users = users.map(u => ({
@@ -271,6 +274,25 @@ export class Database {
             reference: p.reference || undefined,
             createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
             updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString()
+          }));
+
+          this.data.withdrawalRequests = withdrawalReqs.map(w => ({
+            id: w.id,
+            referenceId: w.referenceId,
+            userId: w.userId,
+            walletId: w.walletId,
+            amount: Number(w.amount),
+            currency: w.currency,
+            paymentMethod: w.paymentMethod,
+            phoneNumber: w.phoneNumber || undefined,
+            accountDetails: w.accountDetails || undefined,
+            status: w.status as any,
+            remarks: w.remarks || undefined,
+            createdAt: w.createdAt ? w.createdAt.toISOString() : new Date().toISOString(),
+            updatedAt: w.updatedAt ? w.updatedAt.toISOString() : new Date().toISOString(),
+            approvedBy: w.approvedBy || undefined,
+            approvedAt: w.approvedAt ? w.approvedAt.toISOString() : undefined,
+            rejectedAt: w.rejectedAt ? w.rejectedAt.toISOString() : undefined,
           }));
 
           console.log(`[DB] Successfully loaded from PostgreSQL (${this.data.users.length} users, ${this.data.wallets.length} wallets, ${this.data.trades.length} trades, ${this.data.transactions.length} transactions).`);
@@ -650,6 +672,39 @@ export class Database {
         });
       }
 
+      // Upsert Withdrawal Requests
+      for (const w of (this.data.withdrawalRequests || [])) {
+        await prisma.withdrawalRequest.upsert({
+          where: { id: w.id },
+          update: {
+            status: w.status as any,
+            remarks: w.remarks || null,
+            approvedBy: w.approvedBy || null,
+            approvedAt: w.approvedAt ? new Date(w.approvedAt) : null,
+            rejectedAt: w.rejectedAt ? new Date(w.rejectedAt) : null,
+            updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
+          },
+          create: {
+            id: w.id,
+            referenceId: w.referenceId,
+            userId: w.userId,
+            walletId: w.walletId,
+            amount: w.amount,
+            currency: w.currency || 'USD',
+            paymentMethod: w.paymentMethod,
+            phoneNumber: w.phoneNumber || null,
+            accountDetails: w.accountDetails || null,
+            status: w.status as any,
+            remarks: w.remarks || null,
+            approvedBy: w.approvedBy || null,
+            approvedAt: w.approvedAt ? new Date(w.approvedAt) : null,
+            rejectedAt: w.rejectedAt ? new Date(w.rejectedAt) : null,
+            createdAt: w.createdAt ? new Date(w.createdAt) : new Date(),
+            updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
+          }
+        });
+      }
+
       console.log('[DB] Synchronized data to PostgreSQL via Prisma successfully.');
     } catch (err) {
       console.warn('[DB] Error saving to PostgreSQL via Prisma:', err);
@@ -688,6 +743,7 @@ export class Database {
   public get activityLogs(): ActivityLog[] { return this.data.activityLogs; }
   public get mpesaTransactions(): MpesaTransaction[] { return this.data.mpesaTransactions || (this.data.mpesaTransactions = []); }
   public get paymentTransactions(): PaymentTransaction[] { return this.data.paymentTransactions || (this.data.paymentTransactions = []); }
+  public get withdrawalRequests(): WithdrawalRequest[] { return this.data.withdrawalRequests || (this.data.withdrawalRequests = []); }
 
   // Seed default data
   private seed() {

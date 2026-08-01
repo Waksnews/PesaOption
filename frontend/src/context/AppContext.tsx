@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, MarketPrice, UserRole, ActivityLog,
-  OwnerStats, SystemHealth, OwnerConfig
+  OwnerStats, SystemHealth, OwnerConfig, WithdrawalRequest
 } from '../types';
 import { useMarketStore } from '../stores/marketStore';
 import { useTradeStore } from '../stores/tradeStore';
@@ -33,6 +33,7 @@ interface AppContextType {
     trades: (Trade & { userEmail: string; userFullName: string })[];
     transactions: (Transaction & { userEmail: string; userFullName: string })[];
     tickets: SupportTicket[];
+    withdrawalRequests: WithdrawalRequest[];
     stats: {
       totalUsers: number;
       totalTrades: number;
@@ -80,6 +81,8 @@ interface AppContextType {
     reason: string;
     asset?: string;
   }) => Promise<{ success: boolean; refId?: string; error?: string }>;
+  adminApproveWithdrawal: (id: string) => Promise<boolean>;
+  adminRejectWithdrawal: (id: string, remarks?: string) => Promise<boolean>;
 
   // Owner Suite
   ownerStats: OwnerStats | null;
@@ -119,6 +122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     trades: [],
     transactions: [],
     tickets: [],
+    withdrawalRequests: [],
     stats: null,
     logs: []
   });
@@ -200,11 +204,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchAdminData = useCallback(async () => {
     if (!token || (user?.role !== 'admin' && user?.role !== 'owner')) return;
     try {
-      const [allUsers, allTrades, allTxs, allTickets, stats, logs] = await Promise.all([
+      const [allUsers, allTrades, allTxs, allTickets, allWreqs, stats, logs] = await Promise.all([
         callApi('/api/admin/users'),
         callApi('/api/admin/trades'),
         callApi('/api/admin/transactions'),
         callApi('/api/admin/tickets'),
+        callApi('/api/admin/withdrawals'),
         callApi('/api/admin/stats'),
         callApi('/api/admin/logs')
       ]);
@@ -214,6 +219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         trades: allTrades,
         transactions: allTxs,
         tickets: allTickets,
+        withdrawalRequests: allWreqs || [],
         stats,
         logs
       });
@@ -616,11 +622,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const adminApproveWithdrawal = async (id: string): Promise<boolean> => {
+    try {
+      await callApi(`/api/admin/withdrawals/${id}/approve`, { method: 'POST' });
+      await fetchAdminData();
+      await refreshUserData();
+      return true;
+    } catch (e: any) {
+      setError(e.message);
+      return false;
+    }
+  };
+
+  const adminRejectWithdrawal = async (id: string, remarks?: string): Promise<boolean> => {
+    try {
+      await callApi(`/api/admin/withdrawals/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ remarks })
+      });
+      await fetchAdminData();
+      await refreshUserData();
+      return true;
+    } catch (e: any) {
+      setError(e.message);
+      return false;
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, token, prices, wallets, transactions, openPositions, closedTrades, supportTickets, notifications, announcements, loading, error, adminData,
       login, register, logout, updateProfile, changePassword, depositFunds, withdrawFunds, openTrade, closeTrade, createTicket, replyTicket, refreshUserData, markNotificationsRead,
-      fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet,
+      fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminApproveWithdrawal, adminRejectWithdrawal,
       ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
     }}>
       {children}

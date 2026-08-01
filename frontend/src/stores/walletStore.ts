@@ -23,7 +23,7 @@ export interface WalletState {
   
   // Actions
   deposit: (amount: number, asset: string) => Promise<boolean>;
-  withdraw: (amount: number, asset: string, address?: string) => Promise<boolean>;
+  withdraw: (amount: number, asset: string, address?: string, method?: string, phone?: string, accountDetails?: string) => Promise<{ success: boolean; referenceId?: string; error?: string }>;
   getUsdBalance: () => { balance: number; demoBalance: number };
 }
 
@@ -74,28 +74,28 @@ export const useWalletStore = create<WalletState>()(
         }
       },
       
-      withdraw: async (amount, asset, address) => {
+      withdraw: async (amount, asset, address, method, phone, accountDetails) => {
         const isDemo = get().isDemo;
         try {
-          await callApi('/api/wallet/withdraw', {
+          const res: any = await callApi('/api/wallet/withdraw', {
             method: 'POST',
-            body: JSON.stringify({ amount, asset, isDemo, address })
+            body: JSON.stringify({ amount, asset, isDemo, address, method, phone, accountDetails })
           });
           
           useNotificationStore.getState().addToast(
-            'Withdrawal Processed',
-            `Debit of $${amount.toLocaleString()} ${asset} completed from your ${isDemo ? 'Demo' : 'Real-Sim'} ledger.`,
-            'success'
+            'Withdrawal Request Submitted',
+            `Your request ${res.referenceId || ''} of $${amount.toLocaleString()} ${asset} is under review.`,
+            'info'
           );
           
-          return true;
+          return { success: true, referenceId: res.referenceId };
         } catch (err: any) {
           useNotificationStore.getState().addToast(
             'Withdrawal Failed',
             err.message || 'Unable to execute withdrawal request.',
             'error'
           );
-          return false;
+          return { success: false, error: err.message };
         }
       },
       

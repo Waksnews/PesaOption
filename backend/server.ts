@@ -9,7 +9,8 @@ import crypto from 'crypto';
 import { Database, hashPassword } from './server/db';
 import { 
   User, UserRole, Wallet, Transaction, TransactionType, Trade, SupportTicket, 
-  Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog, MarketPrice 
+  Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog, MarketPrice,
+  WithdrawalRequest
 } from './src/types';
 import { GoogleGenAI } from '@google/genai';
 import mpesaRouter from './src/routes/mpesa.routes';
@@ -17,6 +18,7 @@ import paymentRouter from './src/routes/payment.routes';
 import webhookRouter from './src/routes/webhook.routes';
 import passwordRouter from './src/routes/password.routes';
 import { SMSService } from './src/services/sms.service';
+import { EmailService } from './src/services/email.service';
 
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI | null {
@@ -658,7 +660,7 @@ app.post('/api/wallet/deposit', authenticate, (req: any, res) => {
 });
 
 app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
-  const { amount, asset, isDemo, address } = req.body;
+  const { amount, asset, isDemo, address, method, phone, accountDetails } = req.body;
   const valAmount = parseFloat(amount);
 
   if (isNaN(valAmount) || valAmount <= 0) {
@@ -677,9 +679,45 @@ app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
     return res.status(400).json({ error: 'Insufficient funds for withdrawal.' });
   }
 
-  const txId = 'tx_' + Math.random().toString(36).substr(2, 9);
-  const txHash = '0x' + crypto.randomBytes(32).toString('hex');
+  const user = db.users.find(u => u.id === req.userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User account not found.' });
+  }
 
+  const paymentMethod = method || 'M-PESA';
+  const userPhone = phone || user.phoneNumber || address || '';
+  const payoutDetails = accountDetails || address || userPhone || 'M-PESA Payout';
+
+  const referenceId = 'PO-' + Math.floor(100000 + Math.random() * 900000);
+  const wreqId = 'wreq_' + Math.random().toString(36).substr(2, 9);
+  const txId = 'tx_' + Math.random().toString(36).substr(2, 9);
+
+  // Reserve/Deduct funds immediately to prevent double spending while review is PENDING
+  if (isDemo) {
+    wallet.demoBalance -= valAmount;
+  } else {
+    wallet.balance -= valAmount;
+  }
+
+  // 1. Create WithdrawalRequest record with status PENDING
+  const withdrawalReq: WithdrawalRequest = {
+    id: wreqId,
+    referenceId,
+    userId: req.userId,
+    walletId: wallet.id,
+    amount: valAmount,
+    currency: activeAsset,
+    paymentMethod,
+    phoneNumber: userPhone,
+    accountDetails: payoutDetails,
+    status: 'PENDING',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.withdrawalRequests.push(withdrawalReq);
+
+  // 2. Create pending transaction record in audit ledger
   const transaction: Transaction = {
     id: txId,
     userId: req.userId,
@@ -687,33 +725,63 @@ app.post('/api/wallet/withdraw', authenticate, (req: any, res) => {
     type: 'withdrawal',
     asset: activeAsset,
     amount: valAmount,
-    status: 'completed', // Complete immediately in sandbox
-    txHash,
-    description: `Withdrawal settled to ${address || 'Bank Account'}`,
+    status: 'pending',
+    txHash: referenceId,
+    description: `Withdrawal Pending Review (${paymentMethod} - Ref: ${referenceId})`,
+    phone: userPhone,
     createdAt: new Date().toISOString()
   };
 
   db.transactions.push(transaction);
-
-  if (isDemo) {
-    wallet.demoBalance -= valAmount;
-  } else {
-    wallet.balance -= valAmount;
-  }
-
   db.save();
-  logActivity(req.userId, 'Wallet Withdrawal', `Withdrew ${valAmount} ${activeAsset} to ${address || 'Payout Account'}`, req);
-  createNotification(req.userId, 'Withdrawal Submitted', `Your withdrawal request of $${valAmount.toLocaleString()} ${activeAsset} has been submitted for processing.`);
 
-  // Trigger SMS notification asynchronously
-  const user = db.users.find(u => u.id === req.userId);
-  if (user && user.phoneNumber) {
-    SMSService.sendWithdrawalSMS(user.phoneNumber, `$${valAmount} ${activeAsset}`, txId).catch(err => {
-      console.error('[WITHDRAWAL SMS ERROR]', err);
+  logActivity(req.userId, 'Wallet Withdrawal Request Created', `Submitted withdrawal request ${referenceId} for $${valAmount} ${activeAsset} via ${paymentMethod}`, req);
+  createNotification(req.userId, 'Withdrawal Submitted', `Your withdrawal request ${referenceId} of $${valAmount.toLocaleString()} ${activeAsset} has been submitted for admin review.`);
+
+  // Dispatch notifications asynchronously
+  EmailService.sendWithdrawalSubmittedEmail(
+    user.email,
+    user.fullName || user.email.split('@')[0],
+    valAmount.toString(),
+    activeAsset,
+    paymentMethod,
+    referenceId
+  ).catch((err: any) => console.error('[WITHDRAWAL SUBMITTED EMAIL ERROR]', err));
+
+  if (userPhone) {
+    SMSService.sendWithdrawalSubmittedSMS(userPhone, `$${valAmount} ${activeAsset}`, referenceId).catch((err: any) => {
+      console.error('[WITHDRAWAL SUBMITTED SMS ERROR]', err);
     });
   }
 
-  res.json({ message: 'Withdrawal completed', transaction, wallets: db.wallets.filter(w => w.userId === req.userId) });
+  // Alert Admins via SMS
+  const adminUsers = db.users.filter(u => (u.role === 'admin' || u.role === 'owner') && u.phoneNumber);
+  for (const admin of adminUsers) {
+    if (admin.phoneNumber) {
+      SMSService.sendAdminWithdrawalAlertSMS(admin.phoneNumber, user.email, userPhone, `$${valAmount}`, referenceId).catch((err: any) => {
+        console.error('[ADMIN WITHDRAWAL ALERT SMS ERROR]', err);
+      });
+    }
+  }
+
+  res.json({ 
+    message: 'Withdrawal request submitted for review', 
+    referenceId, 
+    withdrawalRequest: {
+      ...withdrawalReq,
+      userEmail: user.email,
+      userName: user.fullName
+    },
+    transaction, 
+    wallets: db.wallets.filter(w => w.userId === req.userId) 
+  });
+});
+
+app.get('/api/wallet/withdrawals', authenticate, (req: any, res) => {
+  const list = (db.withdrawalRequests || [])
+    .filter(w => w.userId === req.userId)
+    .sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  res.json(list);
 });
 
 app.get('/api/wallet/transactions', authenticate, (req: any, res) => {
@@ -1354,6 +1422,141 @@ app.get('/api/admin/transactions', authenticate, requireAdmin, (req, res) => {
     };
   }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
   res.json(allTxs);
+});
+
+app.get('/api/admin/withdrawals', authenticate, requireAdmin, (req, res) => {
+  const allReqs = (db.withdrawalRequests || []).map(w => {
+    const user = db.users.find(u => u.id === w.userId);
+    return {
+      ...w,
+      userEmail: user ? user.email : 'Unknown',
+      userName: user ? user.fullName : 'Unknown'
+    };
+  }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  res.json(allReqs);
+});
+
+app.post('/api/admin/withdrawals/:id/approve', authenticate, requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const wreq = (db.withdrawalRequests || []).find(w => w.id === id || w.referenceId === id);
+
+  if (!wreq) {
+    return res.status(404).json({ error: 'Withdrawal request not found.' });
+  }
+
+  if (wreq.status !== 'PENDING') {
+    return res.status(400).json({ error: `Withdrawal request is already ${wreq.status}.` });
+  }
+
+  wreq.status = 'APPROVED';
+  wreq.approvedBy = req.userId;
+  wreq.approvedAt = new Date().toISOString();
+  wreq.updatedAt = new Date().toISOString();
+
+  // Update corresponding transaction in ledger
+  const tx = db.transactions.find(t => t.txHash === wreq.referenceId || (t.userId === wreq.userId && t.type === 'withdrawal' && t.status === 'pending'));
+  if (tx) {
+    tx.status = 'completed';
+    tx.description = `Withdrawal Approved (${wreq.paymentMethod} - Ref: ${wreq.referenceId})`;
+  }
+
+  db.save();
+
+  const user = db.users.find(u => u.id === wreq.userId);
+  if (user) {
+    // Dispatch Email & SMS
+    EmailService.sendWithdrawalApprovedEmail(
+      user.email,
+      user.fullName || user.email.split('@')[0],
+      wreq.amount.toString(),
+      wreq.currency || 'USD',
+      wreq.paymentMethod,
+      wreq.referenceId
+    ).catch((err: any) => console.error('[WITHDRAWAL APPROVED EMAIL ERROR]', err));
+
+    const phone = wreq.phoneNumber || user.phoneNumber;
+    if (phone) {
+      SMSService.sendWithdrawalApprovedSMS(phone, `$${wreq.amount} ${wreq.currency || 'USD'}`, wreq.referenceId).catch((err: any) => {
+        console.error('[WITHDRAWAL APPROVED SMS ERROR]', err);
+      });
+    }
+
+    createNotification(user.id, 'Withdrawal Approved!', `Your withdrawal request ${wreq.referenceId} of $${wreq.amount} has been approved and processed.`);
+  }
+
+  logActivity(req.userId, 'Admin Approved Withdrawal', `Approved withdrawal request ${wreq.referenceId} of $${wreq.amount} for user ID ${wreq.userId}`, req);
+
+  res.json({
+    message: 'Withdrawal request approved successfully',
+    withdrawalRequest: wreq
+  });
+});
+
+app.post('/api/admin/withdrawals/:id/reject', authenticate, requireAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { remarks } = req.body;
+
+  const wreq = (db.withdrawalRequests || []).find(w => w.id === id || w.referenceId === id);
+
+  if (!wreq) {
+    return res.status(404).json({ error: 'Withdrawal request not found.' });
+  }
+
+  if (wreq.status !== 'PENDING') {
+    return res.status(400).json({ error: `Withdrawal request is already ${wreq.status}.` });
+  }
+
+  const rejectReason = remarks && remarks.trim() ? remarks.trim() : 'Declined by administrator';
+
+  wreq.status = 'REJECTED';
+  wreq.remarks = rejectReason;
+  wreq.rejectedAt = new Date().toISOString();
+  wreq.updatedAt = new Date().toISOString();
+
+  // Restore user balance
+  const wallet = db.wallets.find(w => w.id === wreq.walletId || (w.userId === wreq.userId && w.asset === (wreq.currency || 'USD')));
+  if (wallet) {
+    wallet.balance += wreq.amount;
+  }
+
+  // Update transaction status in ledger to rejected
+  const tx = db.transactions.find(t => t.txHash === wreq.referenceId || (t.userId === wreq.userId && t.type === 'withdrawal' && t.status === 'pending'));
+  if (tx) {
+    tx.status = 'rejected';
+    tx.description = `Withdrawal Rejected (${rejectReason})`;
+  }
+
+  db.save();
+
+  const user = db.users.find(u => u.id === wreq.userId);
+  if (user) {
+    // Dispatch Email & SMS
+    EmailService.sendWithdrawalRejectedEmail(
+      user.email,
+      user.fullName || user.email.split('@')[0],
+      wreq.amount.toString(),
+      wreq.currency || 'USD',
+      wreq.paymentMethod,
+      wreq.referenceId,
+      rejectReason
+    ).catch((err: any) => console.error('[WITHDRAWAL REJECTED EMAIL ERROR]', err));
+
+    const phone = wreq.phoneNumber || user.phoneNumber;
+    if (phone) {
+      SMSService.sendWithdrawalRejectedSMS(phone, `$${wreq.amount} ${wreq.currency || 'USD'}`, wreq.referenceId, rejectReason).catch((err: any) => {
+        console.error('[WITHDRAWAL REJECTED SMS ERROR]', err);
+      });
+    }
+
+    createNotification(user.id, 'Withdrawal Rejected', `Your withdrawal request ${wreq.referenceId} of $${wreq.amount} was rejected. Reason: ${rejectReason}. Your funds have been restored.`);
+  }
+
+  logActivity(req.userId, 'Admin Rejected Withdrawal', `Rejected withdrawal request ${wreq.referenceId} of $${wreq.amount}. Reason: ${rejectReason}`, req);
+
+  res.json({
+    message: 'Withdrawal request rejected and funds restored to user wallet',
+    withdrawalRequest: wreq
+  });
 });
 
 app.put('/api/admin/transactions/:id/status', authenticate, requireAdmin, async (req: any, res) => {

@@ -66,6 +66,14 @@ enum PaymentStatus {
   Cancelled
 }
 
+enum WithdrawalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  FAILED
+}
+
 model User {
   id                   String            @id @default(uuid())
   email                String            @unique
@@ -93,6 +101,7 @@ model User {
   activityLogs         ActivityLog[]
   mpesaTransactions    MpesaTransaction[]
   paymentTransactions  PaymentTransaction[]
+  withdrawalRequests   WithdrawalRequest[]
 
   @@index([email])
   @@index([referralCode])
@@ -101,15 +110,16 @@ model User {
 }
 
 model Wallet {
-  id           String   @id @default(uuid())
-  userId       String   @map("user_id")
-  asset        String   @default("USD")
-  balance      Decimal  @default(0.00) @db.Decimal(18, 8)
-  demoBalance  Decimal  @default(5000.00) @map("demo_balance") @db.Decimal(18, 8)
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                 String              @id @default(uuid())
+  userId             String              @map("user_id")
+  asset              String              @default("USD")
+  balance            Decimal             @default(0.00) @db.Decimal(18, 8)
+  demoBalance        Decimal             @default(5000.00) @map("demo_balance") @db.Decimal(18, 8)
+  updatedAt          DateTime            @updatedAt @map("updated_at")
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions       Transaction[]
+  withdrawalRequests WithdrawalRequest[]
 
   @@unique([userId, asset])
   @@map("wallets")
@@ -308,4 +318,31 @@ model PaymentTransaction {
   @@index([invoiceId], map: "idx_payment_tx_invoice_id")
   @@index([status], map: "idx_payment_tx_status")
   @@map("payment_transactions")
+}
+
+model WithdrawalRequest {
+  id             String                  @id @default(uuid())
+  referenceId    String                  @unique @map("reference_id")
+  userId         String                  @map("user_id")
+  walletId       String                  @map("wallet_id")
+  amount         Decimal                 @db.Decimal(18, 8)
+  currency       String                  @default("USD")
+  paymentMethod  String                  @map("payment_method")
+  phoneNumber    String?                 @map("phone_number")
+  accountDetails String?                 @map("account_details")
+  status         WithdrawalRequestStatus @default(PENDING)
+  remarks        String?
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+  approvedBy     String?                 @map("approved_by")
+  approvedAt     DateTime?               @map("approved_at")
+  rejectedAt     DateTime?               @map("rejected_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([referenceId])
+  @@map("withdrawal_requests")
 }

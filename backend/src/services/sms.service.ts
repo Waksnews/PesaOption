@@ -56,12 +56,47 @@ export class SMSService {
   }
 
   /**
+   * Sends withdrawal request submitted SMS to user
+   */
+  public static async sendWithdrawalSubmittedSMS(phone: string, amount: string, reference: string): Promise<boolean> {
+    const appName = process.env.APP_NAME || 'PesaOption';
+    const message = `${appName}: Your withdrawal request of ${amount} (Ref: ${reference}) has been received and is pending admin review. You will be notified once processed.`;
+    return this.sendSMS(phone, message);
+  }
+
+  /**
+   * Sends withdrawal request approved SMS to user
+   */
+  public static async sendWithdrawalApprovedSMS(phone: string, amount: string, reference: string): Promise<boolean> {
+    const appName = process.env.APP_NAME || 'PesaOption';
+    const message = `${appName}: Great news! Your withdrawal request ${reference} of ${amount} has been approved and processed. Funds are on their way to your account.`;
+    return this.sendSMS(phone, message);
+  }
+
+  /**
+   * Sends withdrawal request rejected SMS to user
+   */
+  public static async sendWithdrawalRejectedSMS(phone: string, amount: string, reference: string, reason?: string): Promise<boolean> {
+    const appName = process.env.APP_NAME || 'PesaOption';
+    const reasonText = reason ? ` Reason: ${reason}.` : '';
+    const message = `${appName}: Your withdrawal request ${reference} of ${amount} was rejected.${reasonText} Your funds have been restored to your wallet.`;
+    return this.sendSMS(phone, message);
+  }
+
+  /**
+   * Sends alert SMS to Admin when new withdrawal request is submitted
+   */
+  public static async sendAdminWithdrawalAlertSMS(adminPhone: string, userEmail: string, userPhone: string, amount: string, reference: string): Promise<boolean> {
+    const appName = process.env.APP_NAME || 'PesaOption';
+    const message = `[${appName} ADMIN ALERT] New Withdrawal Request ${reference} for ${amount} by ${userEmail} (${userPhone || 'No Phone'}). Please log into Admin Panel to review.`;
+    return this.sendSMS(adminPhone, message);
+  }
+
+  /**
    * Sends withdrawal confirmation SMS
    */
   public static async sendWithdrawalSMS(phone: string, amount: string, reference: string): Promise<boolean> {
-    const appName = process.env.APP_NAME || 'PesaOption';
-    const message = `${appName}: Your withdrawal of ${amount} (Ref: ${reference}) has been submitted and is being processed. Thank you for trading with us.`;
-    return this.sendSMS(phone, message);
+    return this.sendWithdrawalSubmittedSMS(phone, amount, reference);
   }
 
   /**

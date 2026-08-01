@@ -83,24 +83,26 @@ export const WithdrawModal: React.FC = () => {
     }
 
     // Enter processing state
-    const generatedRef = `PO-${Math.floor(100000 + Math.random() * 900000)}`;
-    setRefId(generatedRef);
     setStep('processing');
     setSubmitting(true);
 
-    // Simulate standard transaction verification window (1.8 seconds)
-    setTimeout(async () => {
-      const success = await withdraw(usdEquivalent, 'USD', destination);
-      setSubmitting(false);
+    const result = await withdraw(
+      usdEquivalent, 
+      'USD', 
+      destination, 
+      method.toUpperCase(), 
+      method === 'mpesa' ? phone : undefined, 
+      destination
+    );
+    setSubmitting(false);
 
-      if (success) {
-        setStep('success');
-        addToast('Withdrawal Request Submitted', 'Your withdrawal request has been received and is awaiting review.', 'success');
-        refreshUserData();
-      } else {
-        setStep('details');
-      }
-    }, 1800);
+    if (result.success) {
+      if (result.referenceId) setRefId(result.referenceId);
+      setStep('success');
+      refreshUserData();
+    } else {
+      setStep('details');
+    }
   };
 
   const handleClose = () => {

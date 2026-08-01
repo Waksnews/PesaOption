@@ -157,4 +157,312 @@ export class EmailService {
       return true;
     }
   }
+
+  /**
+   * Sends Withdrawal Request Submitted Email to user
+   */
+  public static async sendWithdrawalSubmittedEmail(
+    recipientEmail: string,
+    fullName: string,
+    amount: string,
+    currency: string = 'USD',
+    method: string,
+    referenceId: string
+  ): Promise<boolean> {
+    try {
+      const resend = this.getResendClient();
+      const appName = process.env.APP_NAME || 'PesaOption';
+      const fromAddress = process.env.RESEND_FROM_EMAIL || `${appName} <noreply@pesaoption.com>`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0B0E14; color: #E2E8F0; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+            .card { background-color: #151D2A; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            .header { text-align: center; border-bottom: 1px solid #1E293B; padding-bottom: 24px; margin-bottom: 24px; }
+            .logo { font-size: 24px; font-weight: 800; color: #14F195; letter-spacing: -0.5px; }
+            .badge { display: inline-block; background-color: rgba(234, 179, 8, 0.15); color: #FACC15; border: 1px solid rgba(234, 179, 8, 0.3); padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 16px; }
+            .amount-box { background-color: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; }
+            .amount-title { color: #94A3B8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+            .amount-val { color: #F8FAFC; font-size: 32px; font-weight: 800; font-family: monospace; }
+            .details-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .details-table td { padding: 12px 0; border-bottom: 1px solid #1E293B; font-size: 14px; }
+            .label { color: #94A3B8; }
+            .val { color: #F8FAFC; text-align: right; font-weight: 600; font-family: monospace; }
+            .footer { text-align: center; color: #64748B; font-size: 12px; margin-top: 32px; border-top: 1px solid #1E293B; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="card">
+              <div class="header">
+                <div class="logo">${appName} Trading Platform</div>
+              </div>
+              <div style="text-align: center;">
+                <span class="badge">Withdrawal Pending Review</span>
+                <h2 style="color: #F8FAFC; margin-top: 0; font-size: 20px;">Withdrawal Request Submitted</h2>
+                <p style="color: #94A3B8; font-size: 14px;">Hello ${fullName}, your withdrawal request has been received and is currently under review by our finance team.</p>
+              </div>
+
+              <div class="amount-box">
+                <div class="amount-title">Requested Amount</div>
+                <div class="amount-val">$${amount} ${currency}</div>
+              </div>
+
+              <table class="details-table">
+                <tr>
+                  <td class="label">Reference ID</td>
+                  <td class="val">${referenceId}</td>
+                </tr>
+                <tr>
+                  <td class="label">Payment Method</td>
+                  <td class="val">${method}</td>
+                </tr>
+                <tr>
+                  <td class="label">Status</td>
+                  <td class="val" style="color: #FACC15;">PENDING REVIEW</td>
+                </tr>
+                <tr>
+                  <td class="label">Estimated Settlement</td>
+                  <td class="val">Within 24 Hours</td>
+                </tr>
+              </table>
+
+              <p style="color: #94A3B8; font-size: 13px; line-height: 1.6; margin-top: 24px;">
+                Your funds have been securely reserved. You will receive an immediate SMS and email notification as soon as your withdrawal is approved and processed.
+              </p>
+              <div class="footer">
+                &copy; ${appName} Trading Platform. All rights reserved.<br>
+                Support Email: support@pesaoption.com | Website: pesaoption.com
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      if (resend) {
+        await resend.emails.send({
+          from: fromAddress,
+          to: [recipientEmail],
+          subject: `[${appName}] Withdrawal Request Received (${referenceId})`,
+          html: htmlContent,
+        });
+      } else {
+        console.log(`[EMAIL SERVICE LOG] Withdrawal Submitted Email sent to ${recipientEmail} (Ref: ${referenceId})`);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('[EMAIL SERVICE ERROR] Failed to send withdrawal submitted email:', error);
+      return true;
+    }
+  }
+
+  /**
+   * Sends Withdrawal Request Approved Email to user
+   */
+  public static async sendWithdrawalApprovedEmail(
+    recipientEmail: string,
+    fullName: string,
+    amount: string,
+    currency: string = 'USD',
+    method: string,
+    referenceId: string
+  ): Promise<boolean> {
+    try {
+      const resend = this.getResendClient();
+      const appName = process.env.APP_NAME || 'PesaOption';
+      const fromAddress = process.env.RESEND_FROM_EMAIL || `${appName} <noreply@pesaoption.com>`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0B0E14; color: #E2E8F0; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+            .card { background-color: #151D2A; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            .header { text-align: center; border-bottom: 1px solid #1E293B; padding-bottom: 24px; margin-bottom: 24px; }
+            .logo { font-size: 24px; font-weight: 800; color: #14F195; letter-spacing: -0.5px; }
+            .badge { display: inline-block; background-color: rgba(20, 241, 149, 0.15); color: #14F195; border: 1px solid rgba(20, 241, 149, 0.3); padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 16px; }
+            .amount-box { background-color: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; }
+            .amount-title { color: #94A3B8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+            .amount-val { color: #14F195; font-size: 32px; font-weight: 800; font-family: monospace; }
+            .details-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .details-table td { padding: 12px 0; border-bottom: 1px solid #1E293B; font-size: 14px; }
+            .label { color: #94A3B8; }
+            .val { color: #F8FAFC; text-align: right; font-weight: 600; font-family: monospace; }
+            .footer { text-align: center; color: #64748B; font-size: 12px; margin-top: 32px; border-top: 1px solid #1E293B; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="card">
+              <div class="header">
+                <div class="logo">${appName} Trading Platform</div>
+              </div>
+              <div style="text-align: center;">
+                <span class="badge">Approved & Dispatched</span>
+                <h2 style="color: #F8FAFC; margin-top: 0; font-size: 20px;">Withdrawal Approved!</h2>
+                <p style="color: #94A3B8; font-size: 14px;">Great news ${fullName}, your withdrawal request has been approved and successfully processed.</p>
+              </div>
+
+              <div class="amount-box">
+                <div class="amount-title">Dispatched Amount</div>
+                <div class="amount-val">$${amount} ${currency}</div>
+              </div>
+
+              <table class="details-table">
+                <tr>
+                  <td class="label">Reference ID</td>
+                  <td class="val">${referenceId}</td>
+                </tr>
+                <tr>
+                  <td class="label">Payment Method</td>
+                  <td class="val">${method}</td>
+                </tr>
+                <tr>
+                  <td class="label">Status</td>
+                  <td class="val" style="color: #14F195;">APPROVED & COMPLETED</td>
+                </tr>
+              </table>
+
+              <p style="color: #94A3B8; font-size: 13px; line-height: 1.6; margin-top: 24px;">
+                Thank you for trading with ${appName}. We appreciate your trust in our platform.
+              </p>
+              <div class="footer">
+                &copy; ${appName} Trading Platform. All rights reserved.<br>
+                Support Email: support@pesaoption.com | Website: pesaoption.com
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      if (resend) {
+        await resend.emails.send({
+          from: fromAddress,
+          to: [recipientEmail],
+          subject: `[${appName}] Withdrawal Approved (${referenceId})`,
+          html: htmlContent,
+        });
+      } else {
+        console.log(`[EMAIL SERVICE LOG] Withdrawal Approved Email sent to ${recipientEmail} (Ref: ${referenceId})`);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('[EMAIL SERVICE ERROR] Failed to send withdrawal approved email:', error);
+      return true;
+    }
+  }
+
+  /**
+   * Sends Withdrawal Request Rejected Email to user
+   */
+  public static async sendWithdrawalRejectedEmail(
+    recipientEmail: string,
+    fullName: string,
+    amount: string,
+    currency: string = 'USD',
+    method: string,
+    referenceId: string,
+    remarks?: string
+  ): Promise<boolean> {
+    try {
+      const resend = this.getResendClient();
+      const appName = process.env.APP_NAME || 'PesaOption';
+      const fromAddress = process.env.RESEND_FROM_EMAIL || `${appName} <noreply@pesaoption.com>`;
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0B0E14; color: #E2E8F0; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+            .card { background-color: #151D2A; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            .header { text-align: center; border-bottom: 1px solid #1E293B; padding-bottom: 24px; margin-bottom: 24px; }
+            .logo { font-size: 24px; font-weight: 800; color: #14F195; letter-spacing: -0.5px; }
+            .badge { display: inline-block; background-color: rgba(244, 63, 94, 0.15); color: #F43F5E; border: 1px solid rgba(244, 63, 94, 0.3); padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 16px; }
+            .amount-box { background-color: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; }
+            .amount-title { color: #94A3B8; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+            .amount-val { color: #F43F5E; font-size: 32px; font-weight: 800; font-family: monospace; }
+            .details-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .details-table td { padding: 12px 0; border-bottom: 1px solid #1E293B; font-size: 14px; }
+            .label { color: #94A3B8; }
+            .val { color: #F8FAFC; text-align: right; font-weight: 600; font-family: monospace; }
+            .remarks-box { background-color: rgba(244, 63, 94, 0.1); border-left: 4px solid #F43F5E; padding: 16px; border-radius: 8px; margin-top: 20px; font-size: 13px; color: #FDA4AF; }
+            .footer { text-align: center; color: #64748B; font-size: 12px; margin-top: 32px; border-top: 1px solid #1E293B; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="card">
+              <div class="header">
+                <div class="logo">${appName} Trading Platform</div>
+              </div>
+              <div style="text-align: center;">
+                <span class="badge">Request Declined</span>
+                <h2 style="color: #F8FAFC; margin-top: 0; font-size: 20px;">Withdrawal Request Update</h2>
+                <p style="color: #94A3B8; font-size: 14px;">Hello ${fullName}, your withdrawal request ${referenceId} could not be processed at this time.</p>
+              </div>
+
+              <div class="amount-box">
+                <div class="amount-title">Restored Amount</div>
+                <div class="amount-val">$${amount} ${currency}</div>
+              </div>
+
+              <table class="details-table">
+                <tr>
+                  <td class="label">Reference ID</td>
+                  <td class="val">${referenceId}</td>
+                </tr>
+                <tr>
+                  <td class="label">Payment Method</td>
+                  <td class="val">${method}</td>
+                </tr>
+                <tr>
+                  <td class="label">Status</td>
+                  <td class="val" style="color: #F43F5E;">REJECTED</td>
+                </tr>
+              </table>
+
+              ${remarks ? `<div class="remarks-box"><strong>Reason for Rejection:</strong> ${remarks}</div>` : ''}
+
+              <p style="color: #94A3B8; font-size: 13px; line-height: 1.6; margin-top: 24px;">
+                Your funds ($${amount} ${currency}) have been fully restored to your active trading balance. If you have questions, please contact our 24/7 support.
+              </p>
+              <div class="footer">
+                &copy; ${appName} Trading Platform. All rights reserved.<br>
+                Support Email: support@pesaoption.com | Website: pesaoption.com
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      if (resend) {
+        await resend.emails.send({
+          from: fromAddress,
+          to: [recipientEmail],
+          subject: `[${appName}] Withdrawal Request Update (${referenceId})`,
+          html: htmlContent,
+        });
+      } else {
+        console.log(`[EMAIL SERVICE LOG] Withdrawal Rejected Email sent to ${recipientEmail} (Ref: ${referenceId})`);
+      }
+      return true;
+    } catch (error: any) {
+      console.error('[EMAIL SERVICE ERROR] Failed to send withdrawal rejected email:', error);
+      return true;
+    }
+  }
 }
