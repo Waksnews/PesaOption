@@ -1455,6 +1455,28 @@ app.get('/api/admin/withdrawals', authenticate, requireAdmin, (req, res) => {
   res.json(allReqs);
 });
 
+app.get('/api/admin/payments', authenticate, requireAdmin, (req, res) => {
+  const allPayments = (db.paymentTransactions || []).map(p => {
+    const user = db.users.find(u => u.id === p.userId);
+    
+    let normalizedStatus = 'PENDING';
+    if (p.status === 'Completed' || (p.status as string) === 'SUCCESS') normalizedStatus = 'SUCCESS';
+    else if (p.status === 'Failed' || (p.status as string) === 'FAILED') normalizedStatus = 'FAILED';
+    else if (p.status === 'Cancelled' || (p.status as string) === 'CANCELLED') normalizedStatus = 'CANCELLED';
+    
+    return {
+      ...p,
+      reference: p.reference || p.invoiceId,
+      userEmail: user ? user.email : 'Unknown User',
+      userFullName: user ? user.fullName : (user ? user.email.split('@')[0] : 'Unknown'),
+      normalizedStatus,
+      created: p.createdAt,
+      completed: p.updatedAt,
+    };
+  }).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+  res.json(allPayments);
+});
+
 app.post('/api/admin/withdrawals/:id/approve', authenticate, requireAdmin, async (req: any, res) => {
   const { id } = req.params;
   const wreq = (db.withdrawalRequests || []).find(w => w.id === id || w.referenceId === id);

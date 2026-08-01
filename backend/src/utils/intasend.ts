@@ -39,9 +39,10 @@ export function isValidIntaSendPhone(phone: string): boolean {
  * Verifies IntaSend Webhook Signature
  */
 export function verifyIntaSendSignature(req: any, webhookSecret: string): boolean {
-  if (!webhookSecret) {
-    // If webhook secret is not configured in env, allow in dev or fallback gracefully with warning
-    console.warn('[INTASEND WEBHOOK] INTASEND_WEBHOOK_SECRET is not set. Skipping signature verification check.');
+  const secret = webhookSecret || process.env.INTASEND_WEBHOOK_SECRET || process.env.INTASEND_SECRET_KEY || '';
+
+  if (!secret) {
+    console.warn('[INTASEND WEBHOOK] INTASEND_WEBHOOK_SECRET is not set in environment. Allowing webhook with fallback log.');
     return true;
   }
 
@@ -49,40 +50,44 @@ export function verifyIntaSendSignature(req: any, webhookSecret: string): boolea
     const signatureHeader = req.headers['x-intasend-signature'] || req.headers['signature'] || req.headers['x-signature'];
     const bodyChallenge = req.body?.challenge || req.body?.signature;
 
-    // Check header signature first if provided
+    // 1. Check header HMAC signature
     if (signatureHeader) {
       const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
       const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
+        .createHmac('sha256', secret)
         .update(rawBody)
         .digest('hex');
 
       if (signatureHeader === expectedSignature) {
+        console.log('[PAYMENT STAGE] Signature verified: Valid header HMAC match');
         return true;
       }
     }
 
-    // Check challenge parameter or direct secret matching
-    if (bodyChallenge && (bodyChallenge === webhookSecret || bodyChallenge === process.env.INTASEND_SECRET_KEY)) {
+    // 2. Check challenge parameter or direct secret key match
+    if (bodyChallenge && (bodyChallenge === secret || bodyChallenge === process.env.INTASEND_SECRET_KEY)) {
+      console.log('[PAYMENT STAGE] Signature verified: Valid challenge match');
       return true;
     }
 
-    // Check token header / auth header if IntaSend sends secret key in header
+    // 3. Check secret token header if provided
     const tokenHeader = req.headers['x-intasend-secret'] || req.headers['x-api-key'];
-    if (tokenHeader && tokenHeader === webhookSecret) {
+    if (tokenHeader && (tokenHeader === secret || tokenHeader === process.env.INTASEND_SECRET_KEY)) {
+      console.log('[PAYMENT STAGE] Signature verified: Valid token header match');
       return true;
     }
 
-    // Fallback signature check on invoice_id + state
+    // 4. Fallback payload verification (invoice_id:state)
     if (req.body?.invoice_id && req.body?.state) {
       const payloadString = `${req.body.invoice_id}:${req.body.state}`;
-      const calculated = crypto.createHmac('sha256', webhookSecret).update(payloadString).digest('hex');
+      const calculated = crypto.createHmac('sha256', secret).update(payloadString).digest('hex');
       if (signatureHeader === calculated) {
+        console.log('[PAYMENT STAGE] Signature verified: Valid payload string HMAC match');
         return true;
       }
     }
 
-    // If signature header matches expected HMAC digest
+    console.warn('[PAYMENT STAGE] Signature verification failed: No matching signature criteria found');
     return false;
   } catch (error) {
     console.error('[INTASEND VERIFY SIGNATURE ERROR]', error);

@@ -70,19 +70,19 @@ export const DepositModal: React.FC = () => {
           secondsElapsed += 3;
           setTimerProgress(Math.max(0, 100 - (secondsElapsed / maxTimeoutSeconds) * 100));
 
-          const data = await callApi(`/api/payments/intasend/status/${invoiceId}`);
+          const data = await callApi(`/api/payments/${invoiceId}`);
           
-          if (data.status === 'Completed') {
+          if (data.status === 'SUCCESS' || data.status === 'Completed') {
             setStep('success');
-            addToast('Deposit Received', `KES ${parseFloat(data.amount).toLocaleString()} added successfully.`, 'success');
+            addToast('Deposit Received', `KES ${parseFloat(data.amount).toLocaleString()} added successfully to your Real Wallet.`, 'success');
             await refreshUserData();
             if (intervalId) clearInterval(intervalId);
-          } else if (data.status === 'Failed') {
+          } else if (data.status === 'FAILED' || data.status === 'Failed') {
             setErrorReason('The payment transaction was declined or failed.');
             setStep('failed');
             addToast('Deposit Failed', 'IntaSend payment failed.', 'error');
             if (intervalId) clearInterval(intervalId);
-          } else if (data.status === 'Cancelled') {
+          } else if (data.status === 'CANCELLED' || data.status === 'Cancelled') {
             setStep('cancelled');
             addToast('Deposit Cancelled', 'The payment request was cancelled.', 'info');
             if (intervalId) clearInterval(intervalId);
@@ -158,8 +158,8 @@ export const DepositModal: React.FC = () => {
     setCheckoutUrl(null);
 
     try {
-      // Call IntaSend LIVE payment creation route
-      const response = await callApi('/api/payments/intasend/create', {
+      // Call IntaSend LIVE deposit endpoint
+      const response = await callApi('/api/payments/deposit', {
         method: 'POST',
         body: JSON.stringify({
           amount: stkAmountInKes,
@@ -170,9 +170,10 @@ export const DepositModal: React.FC = () => {
         }),
       });
 
-      setInvoiceId(response.invoiceId);
-      if (response.url) {
-        setCheckoutUrl(response.url);
+      const refOrInvoice = response.reference || response.invoiceId;
+      setInvoiceId(refOrInvoice);
+      if (response.checkoutUrl || response.url) {
+        setCheckoutUrl(response.checkoutUrl || response.url);
       }
 
       setStep('waiting');

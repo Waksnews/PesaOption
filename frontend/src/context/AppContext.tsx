@@ -204,12 +204,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchAdminData = useCallback(async () => {
     if (!token || (user?.role !== 'admin' && user?.role !== 'owner')) return;
     try {
-      const [allUsers, allTrades, allTxs, allTickets, allWreqs, stats, logs] = await Promise.all([
+      const [allUsers, allTrades, allTxs, allTickets, allWreqs, allPayments, stats, logs] = await Promise.all([
         callApi('/api/admin/users'),
         callApi('/api/admin/trades'),
         callApi('/api/admin/transactions'),
         callApi('/api/admin/tickets'),
         callApi('/api/admin/withdrawals'),
+        callApi('/api/admin/payments').catch(() => []),
         callApi('/api/admin/stats'),
         callApi('/api/admin/logs')
       ]);
@@ -220,6 +221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transactions: allTxs,
         tickets: allTickets,
         withdrawalRequests: allWreqs || [],
+        payments: allPayments || [],
         stats,
         logs
       });

@@ -52,7 +52,9 @@ function authenticate(req: any, res: any, next: any) {
 }
 
 // Payment endpoints
+router.post('/deposit', authenticate, PaymentController.createDeposit);
 router.post('/intasend/create', authenticate, PaymentController.createIntaSendPayment);
 router.get('/intasend/status/:invoiceId', authenticate, PaymentController.getIntaSendStatus);
+router.get('/:reference', authenticate, PaymentController.getDepositByRef);
 
 export default router;

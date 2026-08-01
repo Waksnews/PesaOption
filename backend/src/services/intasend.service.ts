@@ -27,7 +27,7 @@ export class IntaSendService {
     amount: number,
     currency: string = 'KES',
     paymentMethod: string = 'M-PESA'
-  ): Promise<{ invoiceId: string; url?: string; customerMessage?: string; status: PaymentStatus }> {
+  ): Promise<{ reference: string; invoiceId: string; url?: string; customerMessage?: string; status: PaymentStatus }> {
     const db = Database.getInstance();
 
     const user = db.users.find(u => u.id === userId);
@@ -36,20 +36,23 @@ export class IntaSendService {
     }
 
     const secretKey = process.env.INTASEND_SECRET_KEY || '';
-    const publishableKey = process.env.INTASEND_PUBLISHABLE_KEY || '';
+    const publicKey = process.env.INTASEND_PUBLIC_KEY || process.env.INTASEND_PUBLISHABLE_KEY || '';
     const formattedPhone = formatIntaSendPhone(rawPhone);
     const userEmail = email || user.email || 'trader@pesaoption.com';
-    const apiRef = `PesaOption-${userId.substring(0, 8)}-${Date.now()}`;
+    
+    // Format PO-DEP-XXXXXXXX
+    const randomHex = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const poReference = `PO-DEP-${randomHex}`;
     const baseUrl = this.getBaseUrl();
 
     let invoiceId = '';
     let checkoutUrl = '';
     let customerMessage = '';
 
-    console.log(`[INTASEND SERVICE] Creating ${paymentMethod} payment for user ${userId}, Amount: ${currency} ${amount}`);
+    console.log(`[PAYMENT STAGE] Payment created: Ref ${poReference} | User: ${userId} | Amount: ${currency} ${amount}`);
+    console.log(`[PAYMENT STAGE] Checkout initiated: Method ${paymentMethod}, Target Phone: ${formattedPhone}`);
 
     if (paymentMethod === 'M-PESA') {
-      // IntaSend M-PESA STK Push API
       if (!secretKey) {
         throw new Error('INTASEND_SECRET_KEY is required in environment variables for Live IntaSend Payments.');
       }
@@ -60,7 +63,7 @@ export class IntaSendService {
           email: userEmail,
           amount: Math.round(amount),
           currency: currency.toUpperCase(),
-          api_ref: apiRef,
+          api_ref: poReference,
         };
 
         console.log('[INTASEND SERVICE] Sending STK Push to IntaSend Live API:', payload);
@@ -74,7 +77,7 @@ export class IntaSendService {
         });
 
         const data = response.data;
-        console.log('[INTASEND SERVICE] Response:', data);
+        console.log('[INTASEND SERVICE] STK Push Response:', data);
 
         invoiceId = data.invoice?.invoice_id || data.id || data.tracking_id || `INTA-${Date.now()}`;
         customerMessage = data.customer_message || 'Please check your phone and enter your M-Pesa PIN.';
@@ -91,13 +94,13 @@ export class IntaSendService {
       // Visa / Mastercard (Card) Checkout API
       try {
         const payload = {
-          public_key: publishableKey || secretKey,
+          public_key: publicKey || secretKey,
           amount: Math.round(amount),
           currency: currency.toUpperCase(),
           email: userEmail,
           phone_number: formattedPhone,
           method: 'CARD',
-          api_ref: apiRef,
+          api_ref: poReference,
           redirect_url: process.env.APP_URL ? `${process.env.APP_URL}/dashboard` : 'https://pesaoption.com/dashboard',
         };
 
@@ -120,7 +123,7 @@ export class IntaSendService {
       }
     }
 
-    // Save payment transaction record to database
+    // Save pending payment transaction record to database
     const paymentTx: PaymentTransaction = {
       id: 'pay_' + Math.random().toString(36).substr(2, 9),
       userId,
@@ -131,7 +134,7 @@ export class IntaSendService {
       amount,
       currency: currency.toUpperCase(),
       status: 'Pending',
-      reference: apiRef,
+      reference: poReference,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -139,9 +142,10 @@ export class IntaSendService {
     db.paymentTransactions.push(paymentTx);
     db.save();
 
-    console.log(`[INTASEND SERVICE] Saved payment transaction ${paymentTx.id} with invoiceId: ${invoiceId}`);
+    console.log(`[PAYMENT STAGE] Payment pending saved: ID ${paymentTx.id} | Invoice ${invoiceId} | Ref ${poReference}`);
 
     return {
+      reference: poReference,
       invoiceId,
       url: checkoutUrl,
       customerMessage,
@@ -150,14 +154,16 @@ export class IntaSendService {
   }
 
   /**
-   * Checks the status of a payment by invoiceId
+   * Checks the status of a payment by reference OR invoiceId
    */
-  public static async getPaymentStatus(invoiceId: string, userId?: string): Promise<PaymentTransaction> {
+  public static async getPaymentStatus(identifier: string, userId?: string): Promise<PaymentTransaction> {
     const db = Database.getInstance();
-    let paymentTx = db.paymentTransactions.find(tx => tx.invoiceId === invoiceId);
+    let paymentTx = db.paymentTransactions.find(
+      tx => tx.reference === identifier || tx.invoiceId === identifier || tx.id === identifier
+    );
 
     if (!paymentTx) {
-      throw new Error(`Payment transaction with invoice ID ${invoiceId} not found.`);
+      throw new Error(`Payment transaction with reference/invoice ID "${identifier}" not found.`);
     }
 
     if (userId && paymentTx.userId !== userId) {
@@ -170,9 +176,11 @@ export class IntaSendService {
       if (secretKey) {
         try {
           const baseUrl = this.getBaseUrl();
+          console.log(`[PAYMENT STAGE] Querying IntaSend status endpoint for Ref: ${paymentTx.reference || paymentTx.invoiceId}`);
+          
           const response = await axios.post(
             `${baseUrl}/payment/status/`,
-            { invoice_id: invoiceId },
+            { invoice_id: paymentTx.invoiceId },
             {
               headers: {
                 Authorization: `Bearer ${secretKey}`,
@@ -184,20 +192,23 @@ export class IntaSendService {
 
           const data = response.data;
           const state = (data.invoice?.state || data.state || '').toUpperCase();
+          console.log(`[PAYMENT STAGE] IntaSend status query response state: "${state}" for invoice: ${paymentTx.invoiceId}`);
 
           if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
+            console.log(`[PAYMENT STAGE] Payment verified: IntaSend state is ${state}`);
             await this.creditUserWallet(paymentTx, data);
           } else if (state === 'FAILED' || state === 'REJECTED') {
             paymentTx.status = 'Failed';
             paymentTx.updatedAt = new Date().toISOString();
             db.save();
+            console.log(`[PAYMENT STAGE] Payment marked as FAILED for Ref: ${paymentTx.reference}`);
           } else if (state === 'CANCELLED') {
             paymentTx.status = 'Cancelled';
             paymentTx.updatedAt = new Date().toISOString();
             db.save();
+            console.log(`[PAYMENT STAGE] Payment marked as CANCELLED for Ref: ${paymentTx.reference}`);
           }
         } catch (err: any) {
-          // Non-blocking poll warning
           console.warn('[INTASEND STATUS POLL SYNC WARN]', err.message);
         }
       }
@@ -212,7 +223,7 @@ export class IntaSendService {
   public static async processWebhook(payload: any): Promise<{ status: string; message: string }> {
     const db = Database.getInstance();
 
-    console.log('[INTASEND WEBHOOK SERVICE] Processing payload:', JSON.stringify(payload));
+    console.log('[PAYMENT STAGE] Webhook received payload:', JSON.stringify(payload));
 
     const invoiceId = payload.invoice_id || payload.id || payload.tracking_id || payload.api_ref;
     const state = (payload.state || payload.status || '').toUpperCase();
@@ -223,16 +234,25 @@ export class IntaSendService {
       return { status: 'error', message: 'Missing invoice_id' };
     }
 
-    // Find transaction record in database
+    // Find transaction record in database by invoiceId, reference, or api_ref
     let paymentTx = db.paymentTransactions.find(
-      tx => tx.invoiceId === invoiceId || tx.reference === payload.api_ref
+      tx => tx.invoiceId === invoiceId || tx.reference === payload.api_ref || tx.reference === invoiceId
     );
 
     // If not found, try to locate user from api_ref payload
-    if (!paymentTx && payload.api_ref && payload.api_ref.startsWith('PesaOption-')) {
-      const parts = payload.api_ref.split('-');
-      const userIdPrefix = parts[1];
-      const targetUser = db.users.find(u => u.id.startsWith(userIdPrefix));
+    if (!paymentTx && payload.api_ref) {
+      let targetUser = null;
+      if (payload.api_ref.startsWith('PesaOption-')) {
+        const parts = payload.api_ref.split('-');
+        const userIdPrefix = parts[1];
+        targetUser = db.users.find(u => u.id.startsWith(userIdPrefix));
+      } else if (payload.api_ref.startsWith('PO-DEP-')) {
+        // Look up by email or phone in payload if present
+        if (payload.email) {
+          targetUser = db.users.find(u => u.email.toLowerCase() === payload.email.toLowerCase());
+        }
+      }
+
       if (targetUser) {
         paymentTx = {
           id: 'pay_' + Math.random().toString(36).substr(2, 9),
@@ -240,7 +260,7 @@ export class IntaSendService {
           invoiceId,
           provider: 'intasend',
           paymentMethod: payload.provider || 'M-PESA',
-          phone: payload.account || '',
+          phone: payload.account || payload.phone_number || '',
           amount: rawAmount || 0,
           currency: payload.currency || 'KES',
           status: 'Pending',
@@ -249,6 +269,7 @@ export class IntaSendService {
           updatedAt: new Date().toISOString(),
         };
         db.paymentTransactions.push(paymentTx);
+        db.save();
       }
     }
 
@@ -259,22 +280,25 @@ export class IntaSendService {
 
     // Idempotency check: prevent duplicate crediting
     if (paymentTx.status === 'Completed') {
-      console.log(`[INTASEND WEBHOOK] Transaction ${invoiceId} has already been credited. Skipping.`);
+      console.log(`[PAYMENT STAGE] Duplicate webhook ignored: Transaction ${paymentTx.reference || invoiceId} already completed.`);
       return { status: 'success', message: 'Transaction already completed' };
     }
 
     if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
+      console.log(`[PAYMENT STAGE] Payment verified via webhook: ${paymentTx.reference || invoiceId}`);
       await this.creditUserWallet(paymentTx, payload);
       return { status: 'success', message: 'Wallet credited successfully' };
     } else if (state === 'FAILED' || state === 'REJECTED') {
       paymentTx.status = 'Failed';
       paymentTx.updatedAt = new Date().toISOString();
       db.save();
+      console.log(`[PAYMENT STAGE] Payment marked as FAILED via webhook: ${paymentTx.reference}`);
       return { status: 'failed', message: 'Transaction marked as failed' };
     } else if (state === 'CANCELLED') {
       paymentTx.status = 'Cancelled';
       paymentTx.updatedAt = new Date().toISOString();
       db.save();
+      console.log(`[PAYMENT STAGE] Payment marked as CANCELLED via webhook: ${paymentTx.reference}`);
       return { status: 'cancelled', message: 'Transaction marked as cancelled' };
     }
 
@@ -282,36 +306,39 @@ export class IntaSendService {
   }
 
   /**
-   * Credits user wallet safely using atomic lock / transaction
+   * Credits user REAL wallet safely using atomic lock / transaction
    */
   private static async creditUserWallet(paymentTx: PaymentTransaction, payload: any): Promise<void> {
     const db = Database.getInstance();
 
     if (paymentTx.status === 'Completed') {
-      return; // Double-guard against concurrent calls
+      console.log(`[PAYMENT STAGE] Duplicate credit prevention: Payment ${paymentTx.reference} is already completed.`);
+      return; // Double-guard against concurrent execution
     }
 
     const userId = paymentTx.userId;
     const wallet = db.wallets.find(w => w.userId === userId && w.asset === 'USD');
 
     if (!wallet) {
-      console.error(`[INTASEND CREDIT ERROR] Wallet not found for user: ${userId}`);
+      console.error(`[INTASEND CREDIT ERROR] Real wallet not found for user: ${userId}`);
       return;
     }
 
     const depositAmountKes = paymentTx.amount;
     const USD_TO_KES_RATE = 130;
     
-    // If currency is KES, convert to USD trading balance, otherwise use direct amount if USD
+    // Convert KES deposit to USD Real Wallet balance
     const creditedUsd = paymentTx.currency === 'USD' ? depositAmountKes : depositAmountKes / USD_TO_KES_RATE;
 
     // 1. Update status to Completed
     paymentTx.status = 'Completed';
     paymentTx.updatedAt = new Date().toISOString();
 
-    // 2. Increase wallet balance
+    // 2. Increase user REAL wallet balance
     wallet.balance = (wallet.balance || 0) + creditedUsd;
     wallet.updatedAt = new Date().toISOString();
+
+    console.log(`[PAYMENT STAGE] Wallet credited: +$${creditedUsd.toFixed(2)} USD added to Real Wallet of user ${userId}`);
 
     // 3. Insert Deposit History / Wallet Transaction
     const txId = 'tx_' + Math.random().toString(36).substr(2, 9);
@@ -323,14 +350,24 @@ export class IntaSendService {
       asset: 'USD',
       amount: creditedUsd,
       status: 'completed',
-      txHash: '0x' + crypto.createHash('sha256').update(paymentTx.invoiceId).digest('hex'),
-      description: `IntaSend ${paymentTx.paymentMethod} Deposit (Invoice: ${paymentTx.invoiceId}, KES ${depositAmountKes.toLocaleString()})`,
+      txHash: '0x' + crypto.createHash('sha256').update(paymentTx.invoiceId || paymentTx.reference || txId).digest('hex'),
+      description: `IntaSend ${paymentTx.paymentMethod} Deposit (Ref: ${paymentTx.reference}, KES ${depositAmountKes.toLocaleString()})`,
       createdAt: new Date().toISOString(),
     };
 
     db.transactions.push(platformTx);
 
-    // 4. Create live notification
+    // 4. Create activity log for audit
+    db.activityLogs.push({
+      id: 'log_' + Math.random().toString(36).substr(2, 9),
+      userId,
+      action: 'IntaSend Deposit Credited',
+      details: `Credited $${creditedUsd.toFixed(2)} USD via IntaSend ${paymentTx.paymentMethod} (Ref: ${paymentTx.reference})`,
+      ipAddress: 'IntaSend Webhook Gateway',
+      createdAt: new Date().toISOString(),
+    });
+
+    // 5. Create live notification
     const notif: Notification = {
       id: 'not_' + Math.random().toString(36).substr(2, 9),
       userId,
@@ -342,29 +379,31 @@ export class IntaSendService {
 
     db.notifications.push(notif);
 
-    // Send SMS & Email Notifications
+    // 6. Send Email Receipt
     const targetUser = db.users.find(u => u.id === userId);
-    const userPhone = paymentTx.phone || targetUser?.phoneNumber;
-
-    console.log(`[NOTIFICATION TRIGGER] IntaSend Deposit Completed: Invoice ${paymentTx.invoiceId} | Amount KES ${depositAmountKes} ($${creditedUsd} USD) | User ID ${userId}`);
-
-    if (userPhone) {
-      SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes}`, paymentTx.invoiceId).catch(err => console.error('[INTASEND SMS ERROR]', err));
-    }
-
     if (targetUser?.email) {
       EmailService.sendDepositEmail(
         targetUser.email,
         targetUser.fullName || targetUser.email.split('@')[0],
-        `KES ${depositAmountKes} ($${creditedUsd.toFixed(2)} USD)`,
+        `KES ${depositAmountKes.toLocaleString()} ($${creditedUsd.toFixed(2)} USD)`,
         'KES',
-        paymentTx.invoiceId
-      ).catch(err => console.error('[INTASEND EMAIL ERROR]', err));
+        paymentTx.reference || paymentTx.invoiceId
+      )
+        .then(() => console.log(`[PAYMENT STAGE] Email sent: Deposit receipt to ${targetUser.email}`))
+        .catch(err => console.error('[INTASEND EMAIL ERROR]', err));
     }
 
-    // 5. Commit changes to persistent database
+    // 7. Send SMS Receipt
+    const userPhone = paymentTx.phone || targetUser?.phoneNumber;
+    if (userPhone) {
+      SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes.toLocaleString()}`, paymentTx.reference || paymentTx.invoiceId)
+        .then(() => console.log(`[PAYMENT STAGE] SMS sent: Deposit notification to ${userPhone}`))
+        .catch(err => console.error('[INTASEND SMS ERROR]', err));
+    }
+
+    // 8. Commit changes to persistent database
     db.save();
 
-    console.log(`[INTASEND CREDIT SUCCESS] User ${userId} wallet credited +$${creditedUsd} USD (KES ${depositAmountKes}) for invoice: ${paymentTx.invoiceId}`);
+    console.log(`[INTASEND CREDIT SUCCESS] User ${userId} wallet successfully credited +$${creditedUsd.toFixed(2)} USD for Ref: ${paymentTx.reference}`);
   }
 }

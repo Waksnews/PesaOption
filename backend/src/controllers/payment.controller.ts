@@ -9,18 +9,17 @@ import { isValidIntaSendPhone } from '../utils/intasend';
 
 export class PaymentController {
   /**
-   * POST /api/payments/intasend/create
-   * Creates IntaSend payment request (STK Push or Card Checkout)
+   * POST /api/payments/deposit
+   * Complete live deposit endpoint (STK Push or Checkout)
    */
-  public static async createIntaSendPayment(req: any, res: Response) {
+  public static async createDeposit(req: any, res: Response) {
     const { amount, phone, currency, email, paymentMethod } = req.body;
-    const userId = req.userId; // Authenticated user ID
+    const userId = req.userId;
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized user.' });
     }
 
-    // Server-side amount validation
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       return res.status(400).json({ error: 'Please enter a valid deposit amount greater than 0.' });
@@ -28,7 +27,6 @@ export class PaymentController {
 
     const selectedMethod = paymentMethod || 'M-PESA';
 
-    // Phone validation for M-PESA
     if (selectedMethod === 'M-PESA') {
       if (!phone || !isValidIntaSendPhone(phone)) {
         return res.status(400).json({
@@ -37,59 +35,99 @@ export class PaymentController {
       }
     }
 
+    const validCurrency = (currency || 'KES').toUpperCase();
+    if (!['KES', 'USD'].includes(validCurrency)) {
+      return res.status(400).json({ error: 'Unsupported currency. Only KES and USD are allowed.' });
+    }
+
     try {
       const result = await IntaSendService.createPayment(
         userId,
         email,
         phone || '',
         numericAmount,
-        currency || 'KES',
+        validCurrency,
         selectedMethod
       );
 
-      return res.json({
-        message: 'IntaSend payment initiated successfully.',
+      return res.status(201).json({
+        success: true,
+        message: 'Deposit payment initiated successfully.',
+        reference: result.reference,
         invoiceId: result.invoiceId,
-        url: result.url,
+        checkoutUrl: result.url,
         customerMessage: result.customerMessage,
-        status: result.status,
+        status: 'PENDING',
+        amount: numericAmount,
+        currency: validCurrency,
+        phone: phone || '',
       });
     } catch (error: any) {
-      console.error('[PAYMENT CONTROLLER] Create IntaSend Error:', error.message);
-      return res.status(500).json({ error: error.message || 'Failed to process IntaSend payment.' });
+      console.error('[PAYMENT CONTROLLER] Deposit Initiation Error:', error.message);
+      return res.status(500).json({ error: error.message || 'Failed to initiate deposit.' });
     }
   }
 
   /**
-   * GET /api/payments/intasend/status/:invoiceId
-   * Checks status of an ongoing IntaSend payment
+   * GET /api/payments/:reference
+   * Payment polling endpoint returning normalized status
    */
-  public static async getIntaSendStatus(req: any, res: Response) {
-    const { invoiceId } = req.params;
+  public static async getDepositByRef(req: any, res: Response) {
+    const { reference } = req.params;
     const userId = req.userId;
 
-    if (!invoiceId) {
-      return res.status(400).json({ error: 'Invoice ID is required.' });
+    if (!reference) {
+      return res.status(400).json({ error: 'Payment reference is required.' });
     }
 
     try {
-      const paymentTx = await IntaSendService.getPaymentStatus(invoiceId, userId);
+      const paymentTx = await IntaSendService.getPaymentStatus(reference, userId);
+
+      // Normalize status string: PENDING, SUCCESS, FAILED, CANCELLED, EXPIRED
+      let normalizedStatus = 'PENDING';
+      if (paymentTx.status === 'Completed') {
+        normalizedStatus = 'SUCCESS';
+      } else if (paymentTx.status === 'Failed') {
+        normalizedStatus = 'FAILED';
+      } else if (paymentTx.status === 'Cancelled') {
+        normalizedStatus = 'CANCELLED';
+      } else if (paymentTx.status === 'Pending') {
+        normalizedStatus = 'PENDING';
+      }
 
       return res.json({
-        status: paymentTx.status,
+        reference: paymentTx.reference || paymentTx.invoiceId,
         invoiceId: paymentTx.invoiceId,
+        status: normalizedStatus,
+        internalStatus: paymentTx.status,
         amount: paymentTx.amount,
         currency: paymentTx.currency,
         phone: paymentTx.phone,
         paymentMethod: paymentTx.paymentMethod,
-        reference: paymentTx.reference,
+        provider: paymentTx.provider,
         createdAt: paymentTx.createdAt,
         updatedAt: paymentTx.updatedAt,
       });
     } catch (error: any) {
-      console.error('[PAYMENT CONTROLLER] Status Error:', error.message);
-      return res.status(500).json({ error: error.message || 'Failed to check payment status.' });
+      console.error('[PAYMENT CONTROLLER] Polling Error:', error.message);
+      return res.status(404).json({ error: error.message || 'Payment transaction not found.' });
     }
+  }
+
+  /**
+   * POST /api/payments/intasend/create (Legacy Alias)
+   */
+  public static async createIntaSendPayment(req: any, res: Response) {
+    return PaymentController.createDeposit(req, res);
+  }
+
+  /**
+   * GET /api/payments/intasend/status/:invoiceId (Legacy Alias)
+   */
+  public static async getIntaSendStatus(req: any, res: Response) {
+    const { invoiceId } = req.params;
+    req.params.reference = invoiceId;
+    return PaymentController.getDepositByRef(req, res);
   }
 
   /**
