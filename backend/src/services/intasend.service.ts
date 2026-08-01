@@ -195,7 +195,7 @@ export class IntaSendService {
           console.log(`[PAYMENT STAGE] IntaSend status query response state: "${state}" for invoice: ${paymentTx.invoiceId}`);
 
           if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
-            console.log(`[PAYMENT STAGE] Payment verified: IntaSend state is ${state}`);
+            console.log(`[PAYMENT VERIFIED] Payment verified via IntaSend API query for Ref: ${paymentTx.reference || paymentTx.invoiceId}`);
             await this.creditUserWallet(paymentTx, data);
           } else if (state === 'FAILED' || state === 'REJECTED') {
             paymentTx.status = 'Failed';
@@ -285,7 +285,7 @@ export class IntaSendService {
     }
 
     if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
-      console.log(`[PAYMENT STAGE] Payment verified via webhook: ${paymentTx.reference || invoiceId}`);
+      console.log(`[PAYMENT VERIFIED] Payment verified via IntaSend webhook for Ref: ${paymentTx.reference || invoiceId}`);
       await this.creditUserWallet(paymentTx, payload);
       return { status: 'success', message: 'Wallet credited successfully' };
     } else if (state === 'FAILED' || state === 'REJECTED') {
