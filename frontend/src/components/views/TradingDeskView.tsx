@@ -68,7 +68,7 @@ export const TradingDeskView: React.FC = () => {
     }
   };
 
-  // Bot interval simulation
+  // Automated trading bot execution
   useEffect(() => {
     if (!tradingBotActive) return;
 
@@ -209,7 +209,7 @@ export const TradingDeskView: React.FC = () => {
 
             {leftTab === 'ledger' && (
               <div className="space-y-2">
-                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Simulation Log</div>
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2">Execution Audit Log</div>
                 <div className="space-y-2 text-[10px] font-mono">
                   {closedTrades.slice(0, 5).map(t => (
                     <div key={t.id} className="border-l border-teal-500/20 pl-2 py-0.5 text-slate-400">
@@ -364,7 +364,7 @@ export const TradingDeskView: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-10 gap-1.5">
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-1.5">
             {digitStats.map(({ digit, percentage }) => {
               const isActive = lastDigit === digit;
               return (
@@ -399,7 +399,7 @@ export const TradingDeskView: React.FC = () => {
             <div className="flex justify-between items-center border-b border-slate-850 pb-2">
               <span className="text-xs font-bold text-slate-200">Execution Console</span>
               <span className="text-[10px] font-mono font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded">
-                {isDemo ? 'DEMO PAPER' : 'REAL SIM'}
+                {isDemo ? 'DEMO ACCOUNT' : 'REAL ACCOUNT'}
               </span>
             </div>
 

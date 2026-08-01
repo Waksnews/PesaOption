@@ -1,6 +1,6 @@
 {
   "name": "PesaOption",
-  "description": "PesaOption - A modern, premium trading simulation platform where users practice market prediction using realistic price movements, AI-powered insights, and interactive charts.",
+  "description": "PesaOption - Africa's premier binary options, forex, and crypto online trading platform featuring instant M-Pesa STK push deposits, real-time charts, and fast execution.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

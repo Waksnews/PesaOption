@@ -62,6 +62,14 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+  }
+
   body {
     @apply bg-[#020617] text-[#F1F5F9] font-sans antialiased selection:bg-[#2563EB]/30 selection:text-[#38BDF8];
   }

@@ -30,7 +30,7 @@ export const SupportChat: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 w-80 h-96 bg-[#090D1A] border border-slate-850 rounded-2xl shadow-2xl flex flex-col justify-between z-50 overflow-hidden">
+    <div className="fixed bottom-4 right-2 sm:bottom-6 sm:right-6 w-[calc(100vw-1rem)] sm:w-80 max-w-sm h-96 bg-[#090D1A] border border-slate-850 rounded-2xl shadow-2xl flex flex-col justify-between z-50 overflow-hidden">
       
       {/* Top chat header info bar */}
       <div className="p-3 bg-slate-950 border-b border-slate-850 flex justify-between items-center">

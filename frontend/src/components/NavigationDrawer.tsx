@@ -168,7 +168,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   <p className="text-xs font-bold text-slate-100 truncate leading-none">{user?.fullName}</p>
                   <div className="flex items-center space-x-1.5">
                     <span className="font-mono text-[8px] uppercase font-bold tracking-wider text-teal-400 bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/15">
-                      {isDemo ? 'DEMO PAPER' : 'REAL SIM'}
+                      {isDemo ? 'DEMO ACCOUNT' : 'REAL ACCOUNT'}
                     </span>
                     <span className="font-mono text-[9px] text-slate-500 font-bold">
                       {formatCurrency(activeBalance, currency)}

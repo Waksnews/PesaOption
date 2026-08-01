@@ -45,7 +45,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
     // Create chart
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 400,
+      height: chartContainerRef.current.clientHeight || 300,
       layout: {
         background: { color: '#090C15' }, // Deep solid midnight blue
         textColor: '#848E9C',
@@ -86,8 +86,8 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
     // Use ResizeObserver for full responsiveness
     const resizeObserver = new ResizeObserver((entries) => {
       if (entries.length === 0 || !chartContainerRef.current) return;
-      const { width } = entries[0].contentRect;
-      chart.resize(width, 400);
+      const { width, height } = entries[0].contentRect;
+      chart.resize(width, height || chartContainerRef.current.clientHeight || 300);
     });
 
     resizeObserver.observe(chartContainerRef.current);
@@ -115,7 +115,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
   }, [currentPrice]);
 
   return (
-    <div className="relative bg-[#090C15] border border-slate-800 rounded-2xl overflow-hidden p-4">
+    <div className="relative bg-[#090C15] border border-slate-800 rounded-2xl overflow-hidden p-2 sm:p-4">
       {/* Zoom in/out floating controllers on bottom-left, matching the screenshot layout */}
       <div className="absolute bottom-16 left-6 flex flex-col space-y-1.5 z-10">
         <button 
@@ -135,7 +135,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
       </div>
 
       {/* Chart Canvas */}
-      <div ref={chartContainerRef} className="w-full h-[400px]" />
+      <div ref={chartContainerRef} className="w-full h-[260px] sm:h-[350px] md:h-[400px]" />
     </div>
   );
 };

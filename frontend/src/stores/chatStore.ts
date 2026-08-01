@@ -23,12 +23,12 @@ export interface ChatState {
 }
 
 const OPERATOR_RESPONSES = [
-  "Hello! I am Valerie, your Senior Market Support Specialist. How can I assist you with your binary derivative hedges today?",
-  "Our Brownian Pricing Feed operates with a 100ms high-frequency tick refresh rate, modeled using Geometric Brownian Motion plus momentum constants. It is completely organic and non-predictable.",
-  "To deposit simulated funds, please use the beautiful 'Deposit' control panel at the top. Choose a mock payment gateway, enter the target value, and click confirm.",
-  "Yes! The payout for our binary option contracts is standard fixed-yield at 95%. Winning trades return your initial stake plus 95% net profit. Losing contracts yield 0 return (stake deducted).",
-  "To swap between your Real-Sim simulated balance and the Demo paper sandbox instantly, click the account pill at the top right of the navigation bar.",
-  "Active contracts settle automatically down to the millisecond on contract expiry. You can view progress under 'Active Open Contracts' in your bottom desk panel."
+  "Hello! I am Valerie, your Senior Market Support Specialist. How can I assist you with your binary options or forex trading today?",
+  "Our platform streaming pricing feed operates with a 100ms high-frequency tick refresh rate, bringing real-time institutional price movements directly to your chart.",
+  "To deposit funds into your account, please click the 'Deposit' button. Select M-Pesa STK Push or another preferred payment gateway, enter your amount, and confirm.",
+  "Yes! The payout for our binary option contracts is standard fixed-yield up to 95%. Winning trades return your initial stake plus up to 95% net profit.",
+  "To switch between your Real Account and Demo Account instantly, click the account selector pill at the top right of the navigation bar.",
+  "Active option contracts settle automatically down to the second upon expiration. You can view progress under 'Active Open Contracts' in your trading desk."
 ];
 
 export const useChatStore = create<ChatState>((set, get) => ({

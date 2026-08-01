@@ -87,7 +87,7 @@ export const DashboardView: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 relative">
         
         {/* Top Header Navbar */}
-        <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-6 flex items-center justify-between relative z-30">
+        <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-3 sm:px-6 flex items-center justify-between relative z-30">
           
           {/* Top Left Menu Trigger */}
           <div className="flex items-center space-x-4">
@@ -248,22 +248,22 @@ export const DashboardView: React.FC = () => {
 
                   {/* Reload funds */}
                   <div className="flex justify-between items-center pt-2 border-t border-slate-850">
-                    <span className="text-[9px] text-slate-500 font-mono">Sandbox Sandbox</span>
+                    <span className="text-[9px] text-slate-500 font-mono">Practice Account</span>
                     <button 
                       onClick={async () => {
-                        const amountNeeded = Math.max(0, 5000 - demoBalance);
+                        const amountNeeded = Math.max(0, 10000 - demoBalance);
                         if (amountNeeded > 0) {
                           await useWalletStore.getState().deposit(amountNeeded, 'USD');
-                          addToast('Paper Balance Restored', 'Sandbox funds topped up back to $5,000.', 'success');
+                          addToast('Demo Balance Restored', 'Practice funds topped up to $10,000.', 'success');
                         } else {
-                          addToast('Balance Cap Reached', 'Demo balance is already at or above $5,000.', 'info');
+                          addToast('Balance Cap Reached', 'Demo balance is already at or above $10,000.', 'info');
                         }
                         setAccountDropdownOpen(false);
                       }}
                       className="text-[10px] text-orange-400 hover:text-orange-300 font-mono flex items-center space-x-1 cursor-pointer"
                     >
-                      <RefreshCw className="w-3 h-3 text-orange-400 animate-spin" />
-                      <span>Reset Sandbox</span>
+                      <RefreshCw className="w-3 h-3 text-orange-400" />
+                      <span>Top-Up Demo</span>
                     </button>
                   </div>
                 </div>
@@ -309,7 +309,7 @@ export const DashboardView: React.FC = () => {
         </header>
 
         {/* Outer Workspace with active Router Views */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
           {announcements.length > 0 && (
             <div className="bg-slate-900 border border-teal-500/20 p-4 rounded-xl flex items-start space-x-3 shadow-md shadow-teal-500/5">
               <div className="p-1.5 bg-teal-500/10 rounded border border-teal-500/20 text-teal-400">

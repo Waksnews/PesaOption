@@ -34,6 +34,7 @@ export const WithdrawModal: React.FC = () => {
   const [bankHolder, setBankHolder] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+  const [refId, setRefId] = useState('');
 
   if (!withdrawModalOpen) return null;
 
@@ -82,22 +83,24 @@ export const WithdrawModal: React.FC = () => {
     }
 
     // Enter processing state
+    const generatedRef = `PO-${Math.floor(100000 + Math.random() * 900000)}`;
+    setRefId(generatedRef);
     setStep('processing');
     setSubmitting(true);
 
-    // Simulate standard transaction clearance window (2.5 seconds)
+    // Simulate standard transaction verification window (1.8 seconds)
     setTimeout(async () => {
       const success = await withdraw(usdEquivalent, 'USD', destination);
       setSubmitting(false);
 
       if (success) {
         setStep('success');
-        addToast('Withdrawal Settled', 'Your withdrawal request has been fully processed and settled.', 'success');
+        addToast('Withdrawal Request Submitted', 'Your withdrawal request has been received and is awaiting review.', 'success');
         refreshUserData();
       } else {
         setStep('details');
       }
-    }, 2500);
+    }, 1800);
   };
 
   const handleClose = () => {
@@ -112,10 +115,10 @@ export const WithdrawModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div className="bg-[#090D1A] border border-slate-850 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl relative">
+      <div className="bg-[#090D1A] border border-slate-850 rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl relative">
         
         {/* Header bar */}
-        <div className="p-5 border-b border-slate-850 flex justify-between items-center bg-slate-950/30">
+        <div className="p-4 sm:p-5 border-b border-slate-850 flex justify-between items-center bg-slate-950/30 flex-shrink-0">
           <span className="text-xs font-bold text-slate-100 uppercase tracking-widest flex items-center space-x-2">
             <Compass className="w-4 h-4 text-blue-400" />
             <span>Debit Withdrawal Order</span>
@@ -126,7 +129,7 @@ export const WithdrawModal: React.FC = () => {
         </div>
 
         {/* Modal content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
           {step === 'details' && (
             <form onSubmit={handleWithdrawSubmit} className="space-y-5">
               
@@ -309,9 +312,9 @@ export const WithdrawModal: React.FC = () => {
               </div>
               
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-100 text-sm">Validating Settlement Node</h4>
+                <h4 className="font-bold text-slate-100 text-sm">Submitting Withdrawal Request</h4>
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Reconciling simulated credit-debit reserves and broadcasting standard financial reference keys...
+                  Verifying account details and logging your withdrawal request with our finance department...
                 </p>
               </div>
             </div>
@@ -319,35 +322,58 @@ export const WithdrawModal: React.FC = () => {
 
           {/* Success screen */}
           {step === 'success' && (
-            <div className="text-center py-6 space-y-5 animate-fade-in">
+            <div className="text-center py-4 space-y-4 animate-fade-in">
               <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-xl shadow-lg shadow-emerald-500/5 animate-bounce">
-                <CheckCircle2 className="w-7 h-7" />
+                <CheckCircle2 className="w-7 h-7 text-emerald-400" />
               </div>
               
-              <div className="space-y-1.5">
-                <h4 className="font-bold text-slate-200 text-base">Withdrawal Order Broadcasted</h4>
-                <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Your debit withdrawal has been settled instantly within this educational simulation environment.
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-100 text-lg">Withdrawal Request Submitted</h4>
+                <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                  Your withdrawal request has been received successfully. Our finance team is currently reviewing your request.
                 </p>
                 
-                <div className="bg-slate-950 border border-slate-900 rounded-2xl p-4 mt-3 max-w-xs mx-auto text-[11px] font-mono text-slate-300 space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-slate-550">Debited Amount:</span>
-                    <span className="text-rose-400 font-bold">-${usdEquivalent.toFixed(2)} USD</span>
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 mt-3 max-w-sm mx-auto text-[11px] font-mono text-slate-300 space-y-2 text-left">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span className="text-slate-400">Status:</span>
+                    <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">Pending Review</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-550">Method:</span>
-                    <span className="text-slate-350 font-bold uppercase">{method}</span>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span className="text-slate-400">Reference ID:</span>
+                    <span className="text-teal-400 font-bold">{refId || 'PO-483928'}</span>
                   </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span className="text-slate-400">Amount:</span>
+                    <span className="text-rose-400 font-bold">${usdEquivalent.toFixed(2)} USD</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span className="text-slate-400">Withdrawal Method:</span>
+                    <span className="text-slate-200 font-bold uppercase">{method}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span className="text-slate-400">Estimated Processing:</span>
+                    <span className="text-emerald-400 font-semibold">Within 24 Hours</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 pt-1 font-sans leading-normal">
+                    📱 You will receive both <strong>Email</strong> and <strong>SMS</strong> notifications once your withdrawal is approved or rejected.
+                  </p>
                 </div>
               </div>
 
-              <button 
-                onClick={handleClose}
-                className="px-6 py-2.5 bg-slate-900 border border-slate-850 hover:bg-slate-850 text-slate-300 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
-              >
-                Return to Desk
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+                <button 
+                  onClick={handleClose}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-950 font-bold text-xs uppercase rounded-xl transition cursor-pointer hover:brightness-110"
+                >
+                  Return Dashboard
+                </button>
+                <button 
+                  onClick={handleClose}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-300 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
+                >
+                  View Transactions
+                </button>
+              </div>
             </div>
           )}
         </div>

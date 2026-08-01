@@ -64,10 +64,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
   };
 
   return (
-    <div className="bg-slate-950 min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="bg-slate-950 min-h-screen flex items-center justify-center p-4 sm:p-6 relative overflow-hidden max-w-full">
       {/* Background ambient lighting */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-teal-500/5 rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute top-1/3 left-1/4 w-[300px] h-[300px] bg-indigo-500/5 rounded-full blur-[80px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[400px] h-[300px] sm:h-[400px] bg-teal-500/5 rounded-full blur-[100px] pointer-events-none overflow-hidden" />
+      <div className="absolute top-1/3 left-1/4 w-[200px] sm:w-[300px] h-[200px] sm:h-[300px] bg-indigo-500/5 rounded-full blur-[80px] pointer-events-none overflow-hidden" />
 
       <div className="w-full max-w-md relative z-10">
         {/* Back link */}
@@ -80,23 +80,23 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
         </button>
 
         {/* Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-8 shadow-2xl">
           {/* Logo */}
           <div className="flex items-center space-x-3 mb-8">
             <div className="w-8 h-8 bg-gradient-to-tr from-teal-500 to-indigo-600 rounded flex items-center justify-center shadow-md">
               <TrendingUp className="w-4.5 h-4.5 text-slate-950 font-bold" />
             </div>
-            <span className="font-display font-bold text-lg tracking-tight text-slate-100">CryptonicHub</span>
+            <span className="font-display font-bold text-lg tracking-tight text-slate-100">PesaOption</span>
           </div>
 
           <h2 className="font-display font-bold text-2xl text-slate-100 tracking-tight mb-2">
             {mode === 'login' && 'Welcome Back'}
-            {mode === 'register' && 'Create Sandbox Account'}
+            {mode === 'register' && 'Open Trading Account'}
           </h2>
           
           <p className="text-slate-400 text-xs mb-6">
-            {mode === 'login' && 'Sign in to access charts, execute orders, and track your paper portfolio.'}
-            {mode === 'register' && 'Get started with $5,000 Demo USD instantly. No payment required.'}
+            {mode === 'login' && 'Sign in to access your trading desk, charts, execute orders, and manage funds.'}
+            {mode === 'register' && 'Create your secure trading account in under one minute to access real and demo trading, secure funding, withdrawals and professional trading tools.'}
           </p>
 
           {/* Form */}
@@ -174,10 +174,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-slate-100 text-sm focus:border-teal-400 focus:outline-none transition"
                   />
                 </div>
-                <p className="text-[10px] text-teal-400/80 mt-1 flex items-center space-x-1 font-mono">
-                  <Sparkles className="w-3 h-3" />
-                  <span>Get $100 starter credit automatically!</span>
-                </p>
               </div>
             )}
 
@@ -201,9 +197,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
               disabled={loading}
               className="w-full py-3 bg-gradient-to-r from-teal-400 to-cyan-300 text-slate-950 font-bold rounded-xl shadow-lg hover:shadow-teal-500/10 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
             >
-              {loading ? 'Processing Workspace...' : (
-                mode === 'login' ? 'Authenticate' : 
-                mode === 'register' ? 'Claim Demo Balance' : 'Send Instructions'
+              {loading ? 'Processing Account...' : (
+                mode === 'login' ? 'Sign In' : 
+                mode === 'register' ? 'Open Trading Account' : 'Send Instructions'
               )}
             </button>
           </form>
@@ -217,7 +213,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
                   onClick={() => setMode('register')}
                   className="text-teal-400 font-semibold hover:underline"
                 >
-                  Create free account
+                  Open free account
                 </button>
               </p>
             ) : mode === 'register' ? (
@@ -243,9 +239,9 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
             )}
           </div>
 
-          {/* Quick Sandbox Login Credentials Help */}
+          {/* Quick Login Credentials Help */}
           <div className="mt-4 p-3 bg-slate-950/80 border border-slate-800/60 rounded-xl text-[10px] text-slate-500 space-y-1">
-            <p className="font-mono uppercase text-slate-400 tracking-wider font-semibold">Demo Sandbox Credentials</p>
+            <p className="font-mono uppercase text-slate-400 tracking-wider font-semibold">Test Login Credentials</p>
             <div className="flex justify-between">
               <span>Standard Trader:</span>
               <span className="font-mono text-slate-300 font-medium">user@trading.demo / user123</span>

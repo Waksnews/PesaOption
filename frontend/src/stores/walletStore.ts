@@ -40,7 +40,7 @@ export const useWalletStore = create<WalletState>()(
         set({ isDemo });
         useNotificationStore.getState().addToast(
           'Account Switched',
-          `Successfully swapped to your ${isDemo ? 'DEMO PAPER' : 'LIVE SIMULATED'} account framework.`,
+          `Successfully switched to your ${isDemo ? 'Demo Account' : 'Real Account'}.`,
           'info'
         );
       },

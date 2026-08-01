@@ -80,7 +80,7 @@ export const WalletsView: React.FC = () => {
               {formatCurrency(activeUsdBalance, currency)}
             </h3>
             <p className="text-[9px] text-slate-500 font-mono mt-1">
-              {isDemo ? 'Paper Sandbox Capital' : 'Simulated Ledger Cover'}
+              {isDemo ? 'Practice Demo Balance' : 'Real Account Wallet Balance'}
             </p>
           </div>
         </div>
@@ -257,10 +257,10 @@ export const WalletsView: React.FC = () => {
             <span>Simulated Ledger Activity History</span>
           </h3>
 
-          <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 border border-slate-850 rounded-xl text-[10px] font-bold uppercase">
+          <div className="flex overflow-x-auto gap-1 bg-slate-950 p-1 border border-slate-850 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase scrollbar-none max-w-full">
             <button
               onClick={() => setActiveListTab('deposits')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer whitespace-nowrap ${
                 activeListTab === 'deposits' ? 'bg-slate-900 text-teal-400 border border-slate-800' : 'text-slate-500 hover:text-slate-350'
               }`}
             >
@@ -268,7 +268,7 @@ export const WalletsView: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveListTab('withdrawals')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer whitespace-nowrap ${
                 activeListTab === 'withdrawals' ? 'bg-slate-900 text-teal-400 border border-slate-800' : 'text-slate-500 hover:text-slate-350'
               }`}
             >
@@ -276,7 +276,7 @@ export const WalletsView: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveListTab('trades')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer whitespace-nowrap ${
                 activeListTab === 'trades' ? 'bg-slate-900 text-teal-400 border border-slate-800' : 'text-slate-500 hover:text-slate-350'
               }`}
             >
