@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWalletStore } from '../../stores/walletStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useApp } from '../../context/AppContext';
@@ -12,7 +12,7 @@ import { getUsdKesRate } from '../../lib/currency';
 import { callApi } from '../../lib/api';
 import { 
   X, Smartphone, ArrowRight, CheckCircle2, 
-  Phone, ShieldAlert, Check, Loader2, CreditCard, ExternalLink
+  Phone, ShieldAlert, Check, Loader2, CreditCard, ExternalLink, RefreshCw, Clock
 } from 'lucide-react';
 
 export const DepositModal: React.FC = () => {
@@ -24,6 +24,12 @@ export const DepositModal: React.FC = () => {
   // Selected Payment Method: 'M-PESA' | 'Visa' | 'Mastercard'
   const [paymentMethod, setPaymentMethod] = useState<'M-PESA' | 'Visa' | 'Mastercard'>('M-PESA');
 
+  // Platform Settings State (Minimum Deposit Limits)
+  const [minSettings, setMinSettings] = useState<{ minimumDepositKES: number; minimumDepositUSD: number }>({
+    minimumDepositKES: 100,
+    minimumDepositUSD: 5,
+  });
+
   // State Management
   const [step, setStep] = useState<'details' | 'sending' | 'waiting' | 'success' | 'failed' | 'cancelled'>('details');
   const [phone, setPhone] = useState('07');
@@ -34,8 +40,25 @@ export const DepositModal: React.FC = () => {
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [errorReason, setErrorReason] = useState<string>('');
   
-  // Progress state
-  const [timerProgress, setTimerProgress] = useState(100);
+  // Polling & Timer state
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(120);
+  const [liveStatusMessage, setLiveStatusMessage] = useState<string>('Preparing payment...');
+
+  // Fetch platform settings on modal mount or open
+  useEffect(() => {
+    if (depositModalOpen) {
+      callApi<{ minimumDepositKES: number; minimumDepositUSD: number }>('/api/settings')
+        .then(data => {
+          if (data) {
+            setMinSettings({
+              minimumDepositKES: data.minimumDepositKES ?? 100,
+              minimumDepositUSD: data.minimumDepositUSD ?? 5,
+            });
+          }
+        })
+        .catch(err => console.warn('[DEPOSIT MODAL] Failed to fetch settings:', err));
+    }
+  }, [depositModalOpen]);
 
   useEffect(() => {
     if (user?.email) {
@@ -53,58 +76,81 @@ export const DepositModal: React.FC = () => {
       setCheckoutUrl(null);
       setErrorReason('');
       setSubmitting(false);
+      setSecondsRemaining(120);
+      setLiveStatusMessage('Preparing payment...');
     }
   }, [depositModalOpen]);
 
-  // Polling Engine: Checks IntaSend payment status every 3 seconds
+  // Polling Engine: Checks IntaSend payment status every 2 seconds for up to 120 seconds
   useEffect(() => {
     let intervalId: any = null;
+    let countdownId: any = null;
+    const maxTimeoutSeconds = 120;
     let secondsElapsed = 0;
-    const maxTimeoutSeconds = 90; // Wait up to 90 seconds for live STK / webhook completion
 
     if (step === 'waiting' && invoiceId) {
-      setTimerProgress(100);
-      
+      setSecondsRemaining(120);
+      setLiveStatusMessage('Waiting for PIN...');
+
+      countdownId = setInterval(() => {
+        setSecondsRemaining(prev => Math.max(0, prev - 1));
+      }, 1000);
+
       const pollStatus = async () => {
         try {
-          secondsElapsed += 3;
-          setTimerProgress(Math.max(0, 100 - (secondsElapsed / maxTimeoutSeconds) * 100));
+          secondsElapsed += 2;
 
           const data = await callApi(`/api/payments/${invoiceId}`);
-          
+
           if (data.status === 'SUCCESS' || data.status === 'Completed') {
+            setLiveStatusMessage('Payment confirmed');
             setStep('success');
-            addToast('Deposit Received', `KES ${parseFloat(data.amount).toLocaleString()} added successfully to your Real Wallet.`, 'success');
+            addToast('Deposit Received', `${data.currency || 'KES'} ${parseFloat(data.amount).toLocaleString()} added successfully to your Real Wallet.`, 'success');
             await refreshUserData();
             if (intervalId) clearInterval(intervalId);
+            if (countdownId) clearInterval(countdownId);
           } else if (data.status === 'FAILED' || data.status === 'Failed') {
-            setErrorReason('The payment transaction was declined or failed.');
+            setLiveStatusMessage('Payment failed');
+            setErrorReason(data.failedReason || 'The payment transaction was declined or failed.');
             setStep('failed');
-            addToast('Deposit Failed', 'IntaSend payment failed.', 'error');
+            addToast('Deposit Failed', data.failedReason || 'IntaSend payment failed.', 'error');
             if (intervalId) clearInterval(intervalId);
+            if (countdownId) clearInterval(countdownId);
           } else if (data.status === 'CANCELLED' || data.status === 'Cancelled') {
+            setLiveStatusMessage('Payment cancelled');
+            setErrorReason(data.failedReason || 'The payment request was cancelled by user.');
             setStep('cancelled');
             addToast('Deposit Cancelled', 'The payment request was cancelled.', 'info');
             if (intervalId) clearInterval(intervalId);
+            if (countdownId) clearInterval(countdownId);
+          } else if (data.status === 'EXPIRED' || data.status === 'Expired') {
+            setLiveStatusMessage('Payment expired');
+            setErrorReason(data.failedReason || 'Payment request expired.');
+            setStep('failed');
+            if (intervalId) clearInterval(intervalId);
+            if (countdownId) clearInterval(countdownId);
           }
         } catch (err: any) {
           console.error('[INTASEND STATUS POLL ERROR]', err);
         }
 
-        // Timeout fallback
+        // Timeout fallback after 120 seconds
         if (secondsElapsed >= maxTimeoutSeconds) {
-          setErrorReason('The payment check timed out. If your wallet was charged, balance will be credited automatically via live webhook.');
+          setErrorReason('Payment check timed out. If you completed payment, your wallet will be updated automatically via background confirmation.');
           setStep('failed');
+          setLiveStatusMessage('Polling timed out');
           if (intervalId) clearInterval(intervalId);
+          if (countdownId) clearInterval(countdownId);
         }
       };
 
       pollStatus();
-      intervalId = setInterval(pollStatus, 3000);
+      intervalId = setInterval(pollStatus, 2000); // Poll every 2 seconds
     }
 
     return () => {
       if (intervalId) clearInterval(intervalId);
+      if (countdownId) clearInterval(countdownId);
     };
   }, [step, invoiceId, refreshUserData, addToast]);
 
@@ -132,6 +178,9 @@ export const DepositModal: React.FC = () => {
 
   const amountNum = parseFloat(amount) || 0;
   const isKes = currency === 'KES';
+  const minRequired = isKes ? minSettings.minimumDepositKES : minSettings.minimumDepositUSD;
+  const isAmountBelowMin = amountNum > 0 && amountNum < minRequired;
+  const isAmountValid = amountNum >= minRequired;
   
   // IntaSend charge is processed in KES
   const rate = getUsdKesRate();
@@ -141,8 +190,8 @@ export const DepositModal: React.FC = () => {
   const handleInitiateDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (amountNum <= 0) {
-      addToast('Validation Warning', 'Please enter a valid deposit amount greater than 0.', 'error');
+    if (!isAmountValid) {
+      addToast('Validation Warning', `Minimum deposit amount is ${currency} ${minRequired}.`, 'error');
       return;
     }
 
@@ -186,6 +235,17 @@ export const DepositModal: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Retry Deposit Action: Resets state to create a brand new reference
+  const handleRetryDeposit = () => {
+    setStep('details');
+    setInvoiceId(null);
+    setCheckoutUrl(null);
+    setErrorReason('');
+    setSubmitting(false);
+    setSecondsRemaining(120);
+    setLiveStatusMessage('Preparing payment...');
   };
 
   const handleClose = () => {
@@ -304,26 +364,43 @@ export const DepositModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Amount Field */}
+              {/* Amount Field with Dynamic Minimum Deposit Enforcement */}
               <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-mono text-slate-550 block font-bold">
-                  Deposit Amount ({currency})
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] uppercase font-mono text-slate-500 block font-bold">
+                    Deposit Amount ({currency})
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold">
+                    Min: {currency} {minRequired}
+                  </span>
+                </div>
                 <div className="relative">
                   <input 
                     type="number" 
                     step="any"
-                    placeholder={isKes ? 'e.g. 1000' : 'e.g. 10'}
+                    placeholder={`e.g. ${minRequired}`}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500/40 focus:outline-none rounded-2xl px-4 py-3.5 text-sm font-mono font-bold text-slate-100"
+                    className={`w-full bg-slate-950 border rounded-2xl px-4 py-3.5 text-sm font-mono font-bold text-slate-100 focus:outline-none ${
+                      isAmountBelowMin 
+                        ? 'border-rose-500/80 focus:border-rose-500' 
+                        : 'border-slate-850 focus:border-emerald-500/40'
+                    }`}
                     required
                   />
                   <span className="absolute right-4 top-3.5 text-xs font-mono font-bold text-slate-500">{currency}</span>
                 </div>
                 
+                {/* Minimum Deposit Validation Error Message */}
+                {isAmountBelowMin && (
+                  <p className="text-[11px] font-mono font-bold text-rose-400 pt-0.5 flex items-center space-x-1">
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>Minimum deposit is {currency} {minRequired}.</span>
+                  </p>
+                )}
+                
                 {/* Dynamic Conversion Details */}
-                {amountNum > 0 && (
+                {amountNum >= minRequired && (
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-1.5 text-[10px] font-mono mt-1">
                     <div className="flex justify-between text-slate-400">
                       <span>IntaSend KES Charge:</span>
@@ -342,7 +419,7 @@ export const DepositModal: React.FC = () => {
               {/* Submit Button */}
               <button 
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !amount || !isAmountValid || (paymentMethod === 'M-PESA' && !isValidPhone(phone))}
                 className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-850 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 font-bold text-xs uppercase rounded-2xl flex items-center justify-center space-x-1.5 cursor-pointer transition-all shadow-lg shadow-emerald-500/10 active:scale-[0.98]"
               >
                 {submitting ? (
@@ -360,7 +437,7 @@ export const DepositModal: React.FC = () => {
             </form>
           )}
 
-          {/* Sending State */}
+          {/* Stage 1: Preparing secure payment */}
           {step === 'sending' && (
             <div className="text-center py-10 space-y-6">
               <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -378,7 +455,7 @@ export const DepositModal: React.FC = () => {
             </div>
           )}
 
-          {/* Waiting for PIN / Confirmation State */}
+          {/* Stage 2 & 3: STK Push Sent & Waiting for M-PESA Confirmation */}
           {step === 'waiting' && (
             <div className="text-center py-8 space-y-6">
               <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -392,7 +469,7 @@ export const DepositModal: React.FC = () => {
                   <>
                     <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-emerald-400 text-xs font-bold mb-1">
                       <Check className="w-3.5 h-3.5" />
-                      <span>STK Push sent</span>
+                      <span>✔ STK Push sent</span>
                     </div>
                     <h4 className="font-bold text-slate-100 text-base">Check your phone</h4>
                     <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
@@ -429,24 +506,37 @@ export const DepositModal: React.FC = () => {
                   </>
                 )}
 
-                {/* Progress bar */}
-                <div className="w-full max-w-[240px] mx-auto space-y-1.5 pt-2">
-                  <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
-                      style={{ width: `${timerProgress}%` }}
-                    />
+                {/* Live Status Indicator Badge */}
+                <div className="pt-2 flex flex-col items-center space-y-2">
+                  <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-slate-950 border border-slate-800 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-teal-400 animate-ping" />
+                    <span className="text-[11px] font-mono font-bold text-teal-300">
+                      Status: {liveStatusMessage}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-[9px] font-mono text-slate-500">
-                    <span>Awaiting IntaSend webhook confirmation</span>
-                    <span>Polling...</span>
+
+                  {/* 120-Second Countdown Timer & Progress Bar */}
+                  <div className="w-full max-w-[240px] space-y-1.5 pt-1">
+                    <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
+                        style={{ width: `${(secondsRemaining / 120) * 100}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-mono text-slate-400">
+                      <span className="flex items-center space-x-1 text-slate-400">
+                        <Clock className="w-3 h-3 text-emerald-400" />
+                        <span>{secondsRemaining}s remaining...</span>
+                      </span>
+                      <span>Polling every 2s</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Success Screen */}
+          {/* Stage 4: Success Screen */}
           {step === 'success' && (
             <div className="text-center py-6 space-y-5">
               <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-xl shadow-lg shadow-emerald-500/5 animate-bounce">
@@ -460,7 +550,7 @@ export const DepositModal: React.FC = () => {
                 </p>
                 <div className="bg-slate-950 border border-slate-900 rounded-2xl p-4 mt-4 max-w-xs mx-auto text-[11px] font-mono text-slate-300 space-y-2 text-left">
                   <div className="flex justify-between">
-                    <span className="text-slate-550">Billed Amount:</span>
+                    <span className="text-slate-500">Billed Amount:</span>
                     <span className="text-emerald-400 font-bold">KES {stkAmountInKes.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between border-t border-slate-900/50 pt-1.5">
@@ -483,7 +573,7 @@ export const DepositModal: React.FC = () => {
             </div>
           )}
 
-          {/* Failed Screen */}
+          {/* Stage 4: Failed Screen with Retry Deposit and Human-Readable Reason */}
           {step === 'failed' && (
             <div className="text-center py-6 space-y-5">
               <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mx-auto text-xl shadow-lg">
@@ -493,31 +583,32 @@ export const DepositModal: React.FC = () => {
               <div className="space-y-2">
                 <h4 className="font-bold text-slate-200 text-base">Deposit Failed</h4>
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  The IntaSend gateway responded with the following status detail:
+                  Reason:
                 </p>
-                <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3 text-rose-300 font-mono text-xs max-w-xs mx-auto">
-                  {errorReason || 'Payment declined or cancelled'}
+                <div className="bg-rose-500/5 border border-rose-500/10 rounded-xl p-3.5 text-rose-300 font-mono text-xs max-w-xs mx-auto leading-relaxed">
+                  {errorReason || 'Payment was not completed. Please try again.'}
                 </div>
               </div>
 
               <div className="pt-2 flex space-x-2.5">
                 <button 
-                  onClick={() => setStep('details')}
-                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
+                  onClick={handleRetryDeposit}
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-500/10"
                 >
-                  Try Again
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Deposit</span>
                 </button>
                 <button 
                   onClick={handleClose}
                   className="flex-1 py-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
               </div>
             </div>
           )}
 
-          {/* Cancelled Screen */}
+          {/* Stage 4: Cancelled Screen */}
           {step === 'cancelled' && (
             <div className="text-center py-6 space-y-5">
               <div className="w-16 h-16 bg-slate-900 border border-slate-850 text-slate-400 rounded-full flex items-center justify-center mx-auto text-xl shadow-lg">
@@ -526,17 +617,18 @@ export const DepositModal: React.FC = () => {
               
               <div className="space-y-2">
                 <h4 className="font-bold text-slate-200 text-base">Payment Cancelled</h4>
-                <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  The IntaSend payment request was cancelled.
-                </p>
+                <div className="bg-slate-900 border border-slate-850 rounded-xl p-3 text-slate-300 font-mono text-xs max-w-xs mx-auto">
+                  {errorReason || 'Request cancelled by user.'}
+                </div>
               </div>
 
               <div className="pt-2 flex space-x-2.5">
                 <button 
-                  onClick={() => setStep('details')}
-                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
+                  onClick={handleRetryDeposit}
+                  className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-500/10"
                 >
-                  Retry Payment
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Deposit</span>
                 </button>
                 <button 
                   onClick={handleClose}

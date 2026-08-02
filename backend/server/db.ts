@@ -10,7 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog,
-  MpesaTransaction, PaymentTransaction, WithdrawalRequest
+  MpesaTransaction, PaymentTransaction, WithdrawalRequest, PlatformSettings
 } from '../src/types';
 
 const DB_FILE = fs.existsSync(path.join(process.cwd(), 'backend')) 
@@ -32,6 +32,7 @@ export interface DatabaseSchema {
   paymentTransactions: PaymentTransaction[];
   withdrawalRequests: WithdrawalRequest[];
   exchangeRates: Record<string, number>;
+  platformSettings?: PlatformSettings;
 }
 
 const defaultSchema: DatabaseSchema = {
@@ -50,6 +51,12 @@ const defaultSchema: DatabaseSchema = {
   withdrawalRequests: [],
   exchangeRates: {
     'USD_KES': 130.0
+  },
+  platformSettings: {
+    id: 'default',
+    minimumDepositKES: 100,
+    minimumDepositUSD: 5,
+    updatedAt: new Date().toISOString()
   }
 };
 
@@ -766,6 +773,30 @@ export class Database {
     const rates = this.getExchangeRates();
     rates[pair] = rate;
     this.save();
+  }
+  public getPlatformSettings(): PlatformSettings {
+    if (!this.data.platformSettings) {
+      this.data.platformSettings = {
+        id: 'default',
+        minimumDepositKES: 100,
+        minimumDepositUSD: 5,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return this.data.platformSettings;
+  }
+  public updatePlatformSettings(settings: Partial<PlatformSettings>, updatedBy?: string): PlatformSettings {
+    const current = this.getPlatformSettings();
+    if (settings.minimumDepositKES !== undefined && settings.minimumDepositKES > 0) {
+      current.minimumDepositKES = settings.minimumDepositKES;
+    }
+    if (settings.minimumDepositUSD !== undefined && settings.minimumDepositUSD > 0) {
+      current.minimumDepositUSD = settings.minimumDepositUSD;
+    }
+    current.updatedAt = new Date().toISOString();
+    if (updatedBy) current.updatedBy = updatedBy;
+    this.save();
+    return current;
   }
 
   // Seed default data

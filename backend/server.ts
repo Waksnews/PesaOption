@@ -1631,10 +1631,61 @@ app.get('/api/admin/logs', authenticate, requireAdmin, (req, res) => {
 });
 
 // Exchange Rate Management Endpoints
+app.get('/api/settings', (req, res) => {
+  const settings = db.getPlatformSettings();
+  res.json({
+    minimumDepositKES: settings.minimumDepositKES,
+    minimumDepositUSD: settings.minimumDepositUSD,
+    usdKesRate: ExchangeRateService.getRate('USD', 'KES'),
+    updatedAt: settings.updatedAt
+  });
+});
+
 app.get('/api/exchange-rates', (req, res) => {
   const rates = ExchangeRateService.getAllRates();
   const usdKesRate = ExchangeRateService.getRate('USD', 'KES');
   res.json({ success: true, usdKesRate, rates });
+});
+
+app.get('/api/admin/settings', authenticate, requireAdmin, (req, res) => {
+  const settings = db.getPlatformSettings();
+  res.json(settings);
+});
+
+app.post('/api/admin/settings', authenticate, requireAdmin, (req: any, res) => {
+  try {
+    const { minimumDepositKES, minimumDepositUSD } = req.body;
+    const kes = parseFloat(minimumDepositKES);
+    const usd = parseFloat(minimumDepositUSD);
+
+    if (isNaN(kes) || kes <= 0) {
+      return res.status(400).json({ error: 'minimumDepositKES must be a number greater than 0.' });
+    }
+    if (isNaN(usd) || usd <= 0) {
+      return res.status(400).json({ error: 'minimumDepositUSD must be a number greater than 0.' });
+    }
+
+    const updated = db.updatePlatformSettings(
+      { minimumDepositKES: kes, minimumDepositUSD: usd },
+      req.userId
+    );
+
+    logActivity(
+      req.userId,
+      'Platform Settings Updated',
+      `Admin updated minimum deposit limits: KES ${kes}, USD ${usd}`,
+      req
+    );
+
+    return res.json({
+      success: true,
+      message: `Successfully updated minimum deposit limits to KES ${kes} / USD ${usd}`,
+      settings: updated
+    });
+  } catch (error: any) {
+    console.error('[ADMIN SETTINGS ERROR]', error);
+    return res.status(500).json({ error: error.message || 'Failed to update platform settings.' });
+  }
 });
 
 app.post('/api/admin/exchange-rates', authenticate, requireAdmin, (req: any, res) => {

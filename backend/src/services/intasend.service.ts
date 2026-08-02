@@ -7,7 +7,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { Database } from '../../server/db';
 import { PaymentTransaction, PaymentStatus, Transaction, Notification } from '../types';
-import { formatIntaSendPhone } from '../utils/intasend';
+import { formatIntaSendPhone, mapIntaSendFailureReason } from '../utils/intasend';
 import { SMSService } from './sms.service';
 import { EmailService } from './email.service';
 import { ExchangeRateService } from './exchangeRate.service';
@@ -302,19 +302,26 @@ export class IntaSendService {
           const state = (data.invoice?.state || data.state || '').toUpperCase();
           console.log(`[PAYMENT STAGE] IntaSend status query response state: "${state}" for invoice: ${paymentTx.invoiceId}`);
 
+          const rawReason = data.failed_reason || data.reason || data.failed_code || data.invoice?.failed_reason || data.invoice?.reason;
+          const mappedReason = mapIntaSendFailureReason(rawReason);
+
           if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
             console.log(`[PAYMENT VERIFIED] Payment verified via IntaSend API query for Ref: ${paymentTx.reference || paymentTx.invoiceId}`);
             await this.creditUserWallet(paymentTx, data);
           } else if (state === 'FAILED' || state === 'REJECTED') {
             paymentTx.status = 'Failed';
+            paymentTx.failedReason = mappedReason;
+            paymentTx.failureCode = String(rawReason || '');
             paymentTx.updatedAt = new Date().toISOString();
             db.save();
-            console.log(`[PAYMENT STAGE] Payment marked as FAILED for Ref: ${paymentTx.reference}`);
+            console.log(`[PAYMENT STAGE] Payment marked as FAILED for Ref: ${paymentTx.reference} | Reason: ${mappedReason}`);
           } else if (state === 'CANCELLED') {
             paymentTx.status = 'Cancelled';
+            paymentTx.failedReason = mappedReason;
+            paymentTx.failureCode = String(rawReason || '1032');
             paymentTx.updatedAt = new Date().toISOString();
             db.save();
-            console.log(`[PAYMENT STAGE] Payment marked as CANCELLED for Ref: ${paymentTx.reference}`);
+            console.log(`[PAYMENT STAGE] Payment marked as CANCELLED for Ref: ${paymentTx.reference} | Reason: ${mappedReason}`);
           }
         } catch (err: any) {
           console.warn('[INTASEND STATUS POLL SYNC WARN]', err.message);
@@ -336,6 +343,8 @@ export class IntaSendService {
     const invoiceId = payload.invoice_id || payload.id || payload.tracking_id || payload.api_ref;
     const state = (payload.state || payload.status || '').toUpperCase();
     const rawAmount = parseFloat(payload.value || payload.amount || payload.net_amount || 0);
+    const rawReason = payload.failed_reason || payload.reason || payload.failed_code || payload.invoice?.failed_reason || payload.invoice?.reason;
+    const mappedReason = mapIntaSendFailureReason(rawReason);
 
     if (!invoiceId) {
       console.error('[INTASEND WEBHOOK] Missing invoice_id in webhook payload.');
@@ -388,25 +397,29 @@ export class IntaSendService {
 
     // Idempotency check: prevent duplicate crediting
     if (paymentTx.status === 'Completed') {
-      console.log(`[PAYMENT STAGE] Duplicate webhook ignored: Transaction ${paymentTx.reference || invoiceId} already completed.`);
+      console.log(`[WEBHOOK]\nSUCCESS\nReason:\nTransaction already completed`);
       return { status: 'success', message: 'Transaction already completed' };
     }
 
     if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'SUCCESS') {
-      console.log(`[PAYMENT VERIFIED] Payment verified via IntaSend webhook for Ref: ${paymentTx.reference || invoiceId}`);
+      console.log(`[WEBHOOK]\nSUCCESS`);
       await this.creditUserWallet(paymentTx, payload);
       return { status: 'success', message: 'Wallet credited successfully' };
     } else if (state === 'FAILED' || state === 'REJECTED') {
       paymentTx.status = 'Failed';
+      paymentTx.failedReason = mappedReason;
+      paymentTx.failureCode = String(rawReason || '');
       paymentTx.updatedAt = new Date().toISOString();
       db.save();
-      console.log(`[PAYMENT STAGE] Payment marked as FAILED via webhook: ${paymentTx.reference}`);
+      console.log(`[WEBHOOK]\nFAILED\nReason:\n${mappedReason}`);
       return { status: 'failed', message: 'Transaction marked as failed' };
     } else if (state === 'CANCELLED') {
       paymentTx.status = 'Cancelled';
+      paymentTx.failedReason = mappedReason;
+      paymentTx.failureCode = String(rawReason || '1032');
       paymentTx.updatedAt = new Date().toISOString();
       db.save();
-      console.log(`[PAYMENT STAGE] Payment marked as CANCELLED via webhook: ${paymentTx.reference}`);
+      console.log(`[WEBHOOK]\nCANCELLED\nReason:\n${mappedReason}`);
       return { status: 'cancelled', message: 'Transaction marked as cancelled' };
     }
 

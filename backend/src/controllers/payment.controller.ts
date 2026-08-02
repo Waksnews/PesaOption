@@ -6,6 +6,9 @@
 import { Request, Response } from 'express';
 import { IntaSendService } from '../services/intasend.service';
 import { isValidIntaSendPhone } from '../utils/intasend';
+import { Database } from '../../server/db';
+
+const pollCounters = new Map<string, { count: number; startTime: number }>();
 
 export class PaymentController {
   /**
@@ -33,7 +36,30 @@ export class PaymentController {
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ error: 'Please enter a valid deposit amount greater than 0.' });
+      return res.status(400).json({ success: false, error: 'Please enter a valid deposit amount greater than 0.' });
+    }
+
+    const validCurrency = (currency || 'KES').toUpperCase();
+    if (!['KES', 'USD'].includes(validCurrency)) {
+      return res.status(400).json({ success: false, error: 'Unsupported currency. Only KES and USD are allowed.' });
+    }
+
+    // Configurable Minimum Deposit Enforcement from Platform Settings in Database
+    const db = Database.getInstance();
+    const platformSettings = db.getPlatformSettings();
+
+    if (validCurrency === 'KES' && numericAmount < platformSettings.minimumDepositKES) {
+      return res.status(400).json({
+        success: false,
+        error: `Minimum deposit is KES ${platformSettings.minimumDepositKES}.`
+      });
+    }
+
+    if (validCurrency === 'USD' && numericAmount < platformSettings.minimumDepositUSD) {
+      return res.status(400).json({
+        success: false,
+        error: `Minimum deposit is USD ${platformSettings.minimumDepositUSD}.`
+      });
     }
 
     const selectedMethod = paymentMethod || 'M-PESA';
@@ -41,14 +67,10 @@ export class PaymentController {
     if (selectedMethod === 'M-PESA') {
       if (!phone || !isValidIntaSendPhone(phone)) {
         return res.status(400).json({
+          success: false,
           error: 'Please enter a valid Safaricom phone number (e.g. 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX).',
         });
       }
-    }
-
-    const validCurrency = (currency || 'KES').toUpperCase();
-    if (!['KES', 'USD'].includes(validCurrency)) {
-      return res.status(400).json({ error: 'Unsupported currency. Only KES and USD are allowed.' });
     }
 
     const tValidation = Date.now() - t0;
@@ -87,7 +109,7 @@ export class PaymentController {
       });
     } catch (error: any) {
       console.error('[PAYMENT CONTROLLER] Deposit Initiation Error:', error.message);
-      return res.status(500).json({ error: error.message || 'Failed to initiate deposit.' });
+      return res.status(500).json({ success: false, error: error.message || 'Failed to initiate deposit.' });
     }
   }
 
@@ -118,6 +140,24 @@ export class PaymentController {
         normalizedStatus = 'PENDING';
       }
 
+      // Backend Polling Log Strategy (Requirement 10)
+      let pollInfo = pollCounters.get(reference);
+      if (!pollInfo) {
+        pollInfo = { count: 1, startTime: Date.now() };
+        pollCounters.set(reference, pollInfo);
+      } else {
+        pollInfo.count += 1;
+      }
+      const elapsedSec = Math.round((Date.now() - pollInfo.startTime) / 1000);
+
+      console.log(`[POLL #${pollInfo.count}]`);
+      console.log(`Status:\n${normalizedStatus === 'PENDING' ? 'PROCESSING' : normalizedStatus}`);
+      console.log(`Elapsed:\n${elapsedSec} sec`);
+
+      if (['SUCCESS', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(normalizedStatus)) {
+        pollCounters.delete(reference);
+      }
+
       return res.json({
         reference: paymentTx.reference || paymentTx.invoiceId,
         invoiceId: paymentTx.invoiceId,
@@ -128,6 +168,8 @@ export class PaymentController {
         phone: paymentTx.phone,
         paymentMethod: paymentTx.paymentMethod,
         provider: paymentTx.provider,
+        failedReason: paymentTx.failedReason || (normalizedStatus === 'FAILED' ? 'Payment was not completed. Please try again.' : undefined),
+        failureCode: paymentTx.failureCode,
         createdAt: paymentTx.createdAt,
         updatedAt: paymentTx.updatedAt,
       });

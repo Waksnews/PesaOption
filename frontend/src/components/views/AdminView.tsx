@@ -26,9 +26,14 @@ export const AdminView: React.FC = () => {
   const { addToast } = useNotificationStore();
   const { currency } = useSettingsStore();
 
-  const [activeTab, setActiveTab] = useState<'owner' | 'payments' | 'withdrawals' | 'wallet' | 'users' | 'trades' | 'announcements' | 'logs' | 'exchange_rates'>(
+  const [activeTab, setActiveTab] = useState<'owner' | 'payments' | 'withdrawals' | 'wallet' | 'users' | 'trades' | 'announcements' | 'exchange_rates' | 'platform_settings' | 'logs'>(
     user?.role === 'owner' ? 'owner' : 'payments'
   );
+
+  // Platform Settings State (Minimum Deposit Limits)
+  const [minDepositKESInput, setMinDepositKESInput] = useState<string>('100');
+  const [minDepositUSDInput, setMinDepositUSDInput] = useState<string>('5');
+  const [isSavingPlatformSettings, setIsSavingPlatformSettings] = useState<boolean>(false);
 
   // Exchange Rate State
   const [exchangeRateInput, setExchangeRateInput] = useState<string>(getUsdKesRate().toString());
@@ -43,7 +48,49 @@ export const AdminView: React.FC = () => {
         }
       })
       .catch(() => {});
+
+    callApi<{ minimumDepositKES: number; minimumDepositUSD: number }>('/api/admin/settings')
+      .then(data => {
+        if (data) {
+          if (data.minimumDepositKES !== undefined) setMinDepositKESInput(data.minimumDepositKES.toString());
+          if (data.minimumDepositUSD !== undefined) setMinDepositUSDInput(data.minimumDepositUSD.toString());
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSavePlatformSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const kesNum = parseFloat(minDepositKESInput);
+    const usdNum = parseFloat(minDepositUSDInput);
+
+    if (isNaN(kesNum) || kesNum <= 0) {
+      addToast('Validation Error', 'Minimum deposit for KES must be greater than 0.', 'error');
+      return;
+    }
+    if (isNaN(usdNum) || usdNum <= 0) {
+      addToast('Validation Error', 'Minimum deposit for USD must be greater than 0.', 'error');
+      return;
+    }
+
+    setIsSavingPlatformSettings(true);
+    try {
+      const res = await callApi<{ success: boolean; message: string; settings: any }>('/api/admin/settings', {
+        method: 'POST',
+        body: JSON.stringify({ minimumDepositKES: kesNum, minimumDepositUSD: usdNum })
+      });
+
+      if (res && res.success) {
+        addToast('Platform Settings Saved', res.message || 'Minimum deposit limits updated successfully.', 'success');
+      } else {
+        addToast('Update Failed', 'Failed to update platform settings.', 'error');
+      }
+    } catch (err: any) {
+      addToast('Update Error', err.message || 'Error updating platform settings.', 'error');
+    } finally {
+      setIsSavingPlatformSettings(false);
+    }
+  };
 
   const handleUpdateExchangeRate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -326,6 +373,7 @@ export const AdminView: React.FC = () => {
             { id: 'users', label: 'Registered Users', icon: Users, badge: registeredUsers.length },
             { id: 'trades', label: 'Trading Desk Oversight', icon: History, badge: adminData.trades?.length || 0 },
             { id: 'announcements', label: 'System Bulletins', icon: Megaphone },
+            { id: 'platform_settings', label: 'Platform Settings', icon: Settings },
             { id: 'exchange_rates', label: 'Exchange Rates', icon: RefreshCw },
             { id: 'logs', label: 'Activity Logs', icon: FileText }
           ].map(tab => {
@@ -1732,6 +1780,81 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: PLATFORM SETTINGS (MINIMUM DEPOSIT) */}
+      {/* ========================================================================= */}
+      {activeTab === 'platform_settings' && (
+        <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center space-x-3 pb-4 border-b border-slate-850">
+            <div className="p-2.5 bg-teal-500/10 border border-teal-500/20 text-teal-400 rounded-xl">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide">
+                Platform Settings & Minimum Deposit Control
+              </h2>
+              <p className="text-slate-400 text-xs">
+                Configure global minimum deposit thresholds for KES and USD transactions across the platform.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSavePlatformSettings} className="bg-slate-950/80 border border-slate-850 rounded-xl p-6 space-y-6 max-w-2xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-mono font-bold text-slate-300 block uppercase">
+                  Minimum Deposit (KES)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-xs font-mono font-bold text-slate-500">KES</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={minDepositKESInput}
+                    onChange={(e) => setMinDepositKESInput(e.target.value)}
+                    placeholder="100"
+                    className="w-full bg-slate-900 border border-slate-800 focus:border-teal-500 focus:outline-none rounded-xl pl-14 pr-4 py-2 text-sm font-mono text-slate-100 font-bold"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">Minimum amount required when user deposits using KES wallet currency.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono font-bold text-slate-300 block uppercase">
+                  Minimum Deposit (USD)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-xs font-mono font-bold text-slate-500">$</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={minDepositUSDInput}
+                    onChange={(e) => setMinDepositUSDInput(e.target.value)}
+                    placeholder="5"
+                    className="w-full bg-slate-900 border border-slate-800 focus:border-teal-500 focus:outline-none rounded-xl pl-8 pr-4 py-2 text-sm font-mono text-slate-100 font-bold"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">Minimum amount required when user deposits using USD wallet currency.</p>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-850 flex items-center justify-between">
+              <p className="text-xs text-slate-500">Changes take effect immediately for all new deposits.</p>
+              <button
+                type="submit"
+                disabled={isSavingPlatformSettings}
+                className="px-6 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-bold font-mono text-xs rounded-xl transition flex items-center space-x-2 disabled:opacity-50 cursor-pointer shadow-lg shadow-teal-500/10"
+              >
+                {isSavingPlatformSettings ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

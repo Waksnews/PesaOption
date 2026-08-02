@@ -82,3 +82,26 @@ export function verifyIntaSendSignature(req: any, webhookSecret: string): boolea
     return false;
   }
 }
+
+/**
+ * Maps IntaSend / Safaricom failure codes and status messages to human-readable user messages.
+ */
+export function mapIntaSendFailureReason(codeOrReason?: string | number): string {
+  if (!codeOrReason) return 'Payment was not completed. Please try again.';
+  const str = String(codeOrReason).trim();
+
+  if (str === '1037' || str.includes('1037') || str.toLowerCase().includes('no response from user')) {
+    return 'The M-PESA request expired because no PIN was entered.';
+  }
+  if (str === '1032' || str.includes('1032') || str.toLowerCase().includes('cancelled by customer')) {
+    return 'Transaction cancelled by customer.';
+  }
+  if (str === '1025' || str.includes('1025') || str.toLowerCase().includes('insufficient')) {
+    return 'Insufficient M-PESA balance.';
+  }
+  if (str.toLowerCase().includes('invalid pin') || str.toLowerCase().includes('wrong pin') || str === '2001') {
+    return 'Incorrect M-PESA PIN entered.';
+  }
+
+  return str || 'Payment was not completed. Please try again.';
+}

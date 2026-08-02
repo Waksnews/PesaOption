@@ -180,6 +180,21 @@ export interface PaymentTransaction {
   reference?: string;
   createdAt: string;
   updatedAt: string;
+  paymentCurrency?: string;
+  walletCurrency?: string;
+  exchangeRate?: number;
+  originalAmount?: number;
+  creditedAmount?: number;
+  failedReason?: string;
+  failureCode?: string;
+}
+
+export interface PlatformSettings {
+  id: string;
+  minimumDepositKES: number;
+  minimumDepositUSD: number;
+  updatedAt: string;
+  updatedBy?: string;
 }
 
 export type WithdrawalRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'FAILED';
