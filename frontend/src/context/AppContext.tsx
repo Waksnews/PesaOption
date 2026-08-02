@@ -7,7 +7,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, MarketPrice, UserRole, ActivityLog,
-  OwnerStats, SystemHealth, OwnerConfig, WithdrawalRequest
+  OwnerStats, SystemHealth, OwnerConfig, WithdrawalRequest, PaymentTransaction
 } from '../types';
 import { useMarketStore } from '../stores/marketStore';
 import { useTradeStore } from '../stores/tradeStore';
@@ -34,6 +34,7 @@ interface AppContextType {
     transactions: (Transaction & { userEmail: string; userFullName: string })[];
     tickets: SupportTicket[];
     withdrawalRequests: WithdrawalRequest[];
+    payments: PaymentTransaction[];
     stats: {
       totalUsers: number;
       totalTrades: number;
@@ -123,6 +124,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     transactions: [],
     tickets: [],
     withdrawalRequests: [],
+    payments: [],
     stats: null,
     logs: []
   });

@@ -3,11 +3,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export const USD_TO_KES_RATE = 130;
+let currentUsdKesRate = 130.0;
 
-export function formatCurrency(amountUsd: number, currency: string, options?: Intl.NumberFormatOptions): string {
+export function getUsdKesRate(): number {
+  return currentUsdKesRate;
+}
+
+export function setUsdKesRate(rate: number): void {
+  if (rate && rate > 0) {
+    currentUsdKesRate = rate;
+  }
+}
+
+export function formatCurrency(
+  amountUsd: number,
+  currency: string,
+  options?: Intl.NumberFormatOptions,
+  overrideRate?: number
+): string {
   const isKes = currency === 'KES';
-  const displayAmount = isKes ? amountUsd * USD_TO_KES_RATE : amountUsd;
+  const rate = overrideRate || currentUsdKesRate;
+  const displayAmount = isKes ? amountUsd * rate : amountUsd;
   
   const formatter = new Intl.NumberFormat('en-KE', {
     style: 'currency',
@@ -20,16 +36,18 @@ export function formatCurrency(amountUsd: number, currency: string, options?: In
   return formatter.format(displayAmount);
 }
 
-export function convertToUsd(amountInActive: number, currency: string): number {
+export function convertToUsd(amountInActive: number, currency: string, overrideRate?: number): number {
   if (currency === 'KES') {
-    return amountInActive / USD_TO_KES_RATE;
+    const rate = overrideRate || currentUsdKesRate;
+    return amountInActive / rate;
   }
   return amountInActive;
 }
 
-export function convertToActive(amountInUsd: number, currency: string): number {
+export function convertToActive(amountInUsd: number, currency: string, overrideRate?: number): number {
   if (currency === 'KES') {
-    return amountInUsd * USD_TO_KES_RATE;
+    const rate = overrideRate || currentUsdKesRate;
+    return amountInUsd * rate;
   }
   return amountInUsd;
 }

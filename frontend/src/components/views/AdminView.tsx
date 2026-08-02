@@ -7,7 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { formatCurrency } from '../../lib/currency';
+import { formatCurrency, getUsdKesRate, setUsdKesRate } from '../../lib/currency';
+import { callApi } from '../../lib/api';
 import { 
   ShieldCheck, Wallet, ArrowDownLeft, ArrowUpRight, RefreshCw, 
   Users, History, Search, CheckCircle2, AlertCircle, PlusCircle, 
@@ -25,9 +26,53 @@ export const AdminView: React.FC = () => {
   const { addToast } = useNotificationStore();
   const { currency } = useSettingsStore();
 
-  const [activeTab, setActiveTab] = useState<'owner' | 'payments' | 'withdrawals' | 'wallet' | 'users' | 'trades' | 'announcements' | 'logs'>(
+  const [activeTab, setActiveTab] = useState<'owner' | 'payments' | 'withdrawals' | 'wallet' | 'users' | 'trades' | 'announcements' | 'logs' | 'exchange_rates'>(
     user?.role === 'owner' ? 'owner' : 'payments'
   );
+
+  // Exchange Rate State
+  const [exchangeRateInput, setExchangeRateInput] = useState<string>(getUsdKesRate().toString());
+  const [isSavingRate, setIsSavingRate] = useState<boolean>(false);
+
+  useEffect(() => {
+    callApi<{ success: boolean; usdKesRate: number }>('/api/exchange-rates')
+      .then(data => {
+        if (data && data.usdKesRate) {
+          setExchangeRateInput(data.usdKesRate.toString());
+          setUsdKesRate(data.usdKesRate);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleUpdateExchangeRate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rateNum = parseFloat(exchangeRateInput);
+    if (isNaN(rateNum) || rateNum <= 0) {
+      addToast('Validation Error', 'Please enter a valid positive exchange rate.', 'error');
+      return;
+    }
+
+    setIsSavingRate(true);
+    try {
+      const res = await callApi<{ success: boolean; rate: number; message: string }>('/api/admin/exchange-rates', {
+        method: 'POST',
+        body: JSON.stringify({ rate: rateNum, pair: 'USD/KES' })
+      });
+
+      if (res && res.success) {
+        setUsdKesRate(res.rate);
+        setExchangeRateInput(res.rate.toString());
+        addToast('Rate Updated', res.message || `Successfully updated exchange rate to 1 USD = ${res.rate} KES`, 'success');
+      } else {
+        addToast('Update Failed', 'Failed to update exchange rate.', 'error');
+      }
+    } catch (err: any) {
+      addToast('Update Error', err.message || 'Error updating exchange rate.', 'error');
+    } finally {
+      setIsSavingRate(false);
+    }
+  };
   
   // Payment Management State
   const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'>('ALL');
@@ -281,6 +326,7 @@ export const AdminView: React.FC = () => {
             { id: 'users', label: 'Registered Users', icon: Users, badge: registeredUsers.length },
             { id: 'trades', label: 'Trading Desk Oversight', icon: History, badge: adminData.trades?.length || 0 },
             { id: 'announcements', label: 'System Bulletins', icon: Megaphone },
+            { id: 'exchange_rates', label: 'Exchange Rates', icon: RefreshCw },
             { id: 'logs', label: 'Activity Logs', icon: FileText }
           ].map(tab => {
             const Icon = tab.icon;
@@ -1685,6 +1731,65 @@ export const AdminView: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: EXCHANGE RATES MANAGEMENT */}
+      {/* ========================================================================= */}
+      {activeTab === 'exchange_rates' && (
+        <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center space-x-3 pb-4 border-b border-slate-850">
+            <div className="p-2.5 bg-teal-500/10 border border-teal-500/20 text-teal-400 rounded-xl">
+              <RefreshCw className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide">
+                Exchange Rate Management
+              </h2>
+              <p className="text-slate-400 text-xs">
+                Configure central exchange rates for multi-currency conversion (e.g. USD / KES).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Current Active Rate Card */}
+            <div className="bg-slate-950/80 border border-slate-850 rounded-xl p-5 space-y-3">
+              <p className="text-xs font-mono font-bold text-slate-400 uppercase">Active USD / KES Rate</p>
+              <div className="flex items-baseline space-x-2">
+                <span className="text-2xl font-mono font-black text-teal-400">1 USD = {getUsdKesRate()} KES</span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                This rate is used by the payment pipeline for all new M-PESA deposits and withdrawals. Every payment transaction record stores its historical rate immutably upon creation.
+              </p>
+            </div>
+
+            {/* Rate Update Form */}
+            <form onSubmit={handleUpdateExchangeRate} className="bg-slate-950/80 border border-slate-850 rounded-xl p-5 space-y-4">
+              <label className="text-xs font-mono font-bold text-slate-300 block uppercase">
+                New Exchange Rate (1 USD = X KES)
+              </label>
+              <div className="flex space-x-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={exchangeRateInput}
+                  onChange={(e) => setExchangeRateInput(e.target.value)}
+                  placeholder="e.g. 130.00"
+                  className="flex-1 bg-slate-900 border border-slate-800 focus:border-teal-500 focus:outline-none rounded-xl px-4 py-2 text-sm font-mono text-slate-100 font-bold"
+                />
+                <button
+                  type="submit"
+                  disabled={isSavingRate}
+                  className="px-5 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-bold font-mono text-xs rounded-xl transition flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingRate ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>Update Rate</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

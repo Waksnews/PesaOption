@@ -13,7 +13,10 @@ export class PaymentController {
    * Complete live deposit endpoint (STK Push or Checkout)
    */
   public static async createDeposit(req: any, res: Response) {
-    const { amount, phone, currency, email, paymentMethod } = req.body;
+    const t0 = Date.now();
+    console.log('[PAYMENT TIMER] Deposit Request Received: +0 ms');
+
+    const tJwtStart = Date.now();
     const userId = req.userId;
 
     if (!userId) {
@@ -21,7 +24,12 @@ export class PaymentController {
       return res.status(401).json({ error: 'Unauthorized user.' });
     }
 
+    const tJwtVerified = Date.now();
+    const jwtDuration = tJwtVerified - tJwtStart;
+    console.log(`[PAYMENT TIMER] JWT Verification: ${jwtDuration} ms`);
     console.log(`[AUTH] Deposit request accepted for user: ${userId}`);
+
+    const { amount, phone, currency, email, paymentMethod } = req.body;
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -43,6 +51,8 @@ export class PaymentController {
       return res.status(400).json({ error: 'Unsupported currency. Only KES and USD are allowed.' });
     }
 
+    const tValidation = Date.now() - t0;
+
     try {
       const result = await IntaSendService.createPayment(
         userId,
@@ -50,8 +60,18 @@ export class PaymentController {
         phone || '',
         numericAmount,
         validCurrency,
-        selectedMethod
+        selectedMethod,
+        t0
       );
+
+      const tFrontendRes = Date.now() - t0;
+      console.log(`[PAYMENT TIMER] Frontend Response Returned: +${tFrontendRes} ms`);
+
+      console.log('[PAYMENT TIMER]');
+      console.log(`Validation: ${tValidation} ms`);
+      console.log(`DB Insert: ${result.dbInsertMs} ms`);
+      console.log(`IntaSend API: ${result.apiMs} ms`);
+      console.log(`Frontend Response: ${tFrontendRes} ms`);
 
       return res.status(201).json({
         success: true,

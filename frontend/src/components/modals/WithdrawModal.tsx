@@ -8,7 +8,7 @@ import { useWalletStore } from '../../stores/walletStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useApp } from '../../context/AppContext';
 import { useNotificationStore } from '../../stores/notificationStore';
-import { formatCurrency, convertToUsd, convertToActive, USD_TO_KES_RATE } from '../../lib/currency';
+import { formatCurrency, convertToUsd, convertToActive } from '../../lib/currency';
 import { 
   X, ArrowRight, Check, Compass, RefreshCw, Phone, Mail, 
   Building2, CheckCircle2, AlertCircle, Sparkles, ShieldCheck 

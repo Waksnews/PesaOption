@@ -9,7 +9,7 @@ import { useTradeStore } from '../../stores/tradeStore';
 import { useWalletStore } from '../../stores/walletStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { formatCurrency, convertToActive, USD_TO_KES_RATE } from '../../lib/currency';
+import { formatCurrency, convertToActive, getUsdKesRate } from '../../lib/currency';
 import { TradingChart } from '../TradingChart';
 import { 
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Sparkles, 
@@ -432,7 +432,7 @@ export const TradingDeskView: React.FC = () => {
                 <label className="text-[10px] uppercase font-mono text-slate-550 block font-bold">Stake Size (USD)</label>
                 {currency === 'KES' && (
                   <span className="text-[9px] font-mono font-bold text-teal-400 animate-pulse">
-                    ≈ KES {(parseFloat(tradeQty) * USD_TO_KES_RATE || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    ≈ KES {(parseFloat(tradeQty) * getUsdKesRate() || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   </span>
                 )}
               </div>

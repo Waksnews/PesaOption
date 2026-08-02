@@ -180,6 +180,11 @@ export interface PaymentTransaction {
   reference?: string;
   createdAt: string;
   updatedAt: string;
+  paymentCurrency?: string;
+  walletCurrency?: string;
+  exchangeRate?: number;
+  originalAmount?: number;
+  creditedAmount?: number;
 }
 
 export type WithdrawalRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'FAILED';

@@ -8,7 +8,7 @@ import { useWalletStore } from '../../stores/walletStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useApp } from '../../context/AppContext';
 import { useNotificationStore } from '../../stores/notificationStore';
-import { USD_TO_KES_RATE } from '../../lib/currency';
+import { getUsdKesRate } from '../../lib/currency';
 import { callApi } from '../../lib/api';
 import { 
   X, Smartphone, ArrowRight, CheckCircle2, 
@@ -134,8 +134,9 @@ export const DepositModal: React.FC = () => {
   const isKes = currency === 'KES';
   
   // IntaSend charge is processed in KES
-  const stkAmountInKes = isKes ? amountNum : Math.round(amountNum * USD_TO_KES_RATE);
-  const creditedAmountInUsd = isKes ? amountNum / USD_TO_KES_RATE : amountNum;
+  const rate = getUsdKesRate();
+  const stkAmountInKes = isKes ? amountNum : Math.round(amountNum * rate);
+  const creditedAmountInUsd = isKes ? (rate > 0 ? amountNum / rate : 0) : amountNum;
 
   const handleInitiateDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -369,7 +370,7 @@ export const DepositModal: React.FC = () => {
               </div>
               
               <div className="space-y-2">
-                <h4 className="font-bold text-slate-100 text-sm">Initiating IntaSend Payment...</h4>
+                <h4 className="font-bold text-slate-100 text-sm">Preparing secure payment...</h4>
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
                   Connecting to IntaSend LIVE gateway. Requesting <strong className="text-emerald-400">KES {stkAmountInKes.toLocaleString()}</strong> charge via <strong className="text-slate-200">{paymentMethod}</strong>.
                 </p>
@@ -389,10 +390,19 @@ export const DepositModal: React.FC = () => {
               <div className="space-y-3">
                 {paymentMethod === 'M-PESA' ? (
                   <>
-                    <h4 className="font-bold text-slate-100 text-sm">Check your phone and enter your M-Pesa PIN.</h4>
+                    <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-emerald-400 text-xs font-bold mb-1">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>STK Push sent</span>
+                    </div>
+                    <h4 className="font-bold text-slate-100 text-base">Check your phone</h4>
                     <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
                       Payment prompt of <strong className="text-emerald-400">KES {stkAmountInKes.toLocaleString()}</strong> sent to <strong className="text-slate-200">+{formatKenyanPhone(phone)}</strong>.
                     </p>
+                    {invoiceId && (
+                      <div className="bg-slate-950 border border-slate-850 px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-400 inline-block mt-1">
+                        Reference: <span className="text-emerald-400 font-bold">{invoiceId}</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -400,6 +410,11 @@ export const DepositModal: React.FC = () => {
                     <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
                       Please complete your secure card authentication.
                     </p>
+                    {invoiceId && (
+                      <div className="bg-slate-950 border border-slate-850 px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-400 inline-block mt-1">
+                        Reference: <span className="text-emerald-400 font-bold">{invoiceId}</span>
+                      </div>
+                    )}
                     {checkoutUrl && (
                       <a 
                         href={checkoutUrl} 

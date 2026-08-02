@@ -10,6 +10,7 @@ import { MpesaTransaction, MpesaStatus, Transaction, Notification } from '../typ
 import { formatPhoneNumber, generateTimestamp, generatePassword } from '../utils/mpesa';
 import { SMSService } from './sms.service';
 import { EmailService } from './email.service';
+import { ExchangeRateService } from './exchangeRate.service';
 
 export class MpesaService {
   private static getBaseUrl(): string {
@@ -171,9 +172,15 @@ export class MpesaService {
       const userId = mpesaTx.userId;
       const wallet = db.wallets.find(w => w.userId === userId && w.asset === 'USD');
       if (wallet) {
-        // Safaricom amount is in KES. Convert to USD equivalent using standard rate (1 USD = 130 KES)
-        const USD_TO_KES_RATE = 130;
-        const creditedAmount = mpesaTx.amount / USD_TO_KES_RATE;
+        const exchangeRate = ExchangeRateService.getRate('USD', 'KES');
+        const creditedAmount = ExchangeRateService.convertKEStoUSD(mpesaTx.amount, exchangeRate);
+        
+        console.log('[PAYMENT]');
+        console.log(`Payment Currency: KES`);
+        console.log(`Wallet Currency: USD`);
+        console.log(`Original Amount: ${mpesaTx.amount}`);
+        console.log(`Exchange Rate: ${exchangeRate}`);
+        console.log(`Credited Amount: ${creditedAmount.toFixed(2)} USD`);
         
         wallet.balance = (wallet.balance || 0) + creditedAmount;
         wallet.updatedAt = new Date().toISOString();

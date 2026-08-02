@@ -10,6 +10,7 @@ import { PaymentTransaction, PaymentStatus, Transaction, Notification } from '..
 import { formatIntaSendPhone } from '../utils/intasend';
 import { SMSService } from './sms.service';
 import { EmailService } from './email.service';
+import { ExchangeRateService } from './exchangeRate.service';
 
 export class IntaSendService {
   private static getBaseUrl(): string {
@@ -26,8 +27,9 @@ export class IntaSendService {
     rawPhone: string,
     amount: number,
     currency: string = 'KES',
-    paymentMethod: string = 'M-PESA'
-  ): Promise<{ reference: string; invoiceId: string; url?: string; customerMessage?: string; status: PaymentStatus }> {
+    paymentMethod: string = 'M-PESA',
+    t0?: number
+  ): Promise<{ reference: string; invoiceId: string; url?: string; customerMessage?: string; status: PaymentStatus; dbInsertMs: number; apiMs: number }> {
     const db = Database.getInstance();
 
     const user = db.users.find(u => u.id === userId);
@@ -40,6 +42,66 @@ export class IntaSendService {
     const formattedPhone = formatIntaSendPhone(rawPhone);
     const userEmail = email || user.email || 'trader@pesaoption.com';
     
+    const activeRate = ExchangeRateService.getRate('USD', 'KES');
+    const walletCurrency = 'USD';
+    const inputCurrency = (currency || 'KES').toUpperCase();
+
+    let paymentCurrency = inputCurrency;
+    let originalAmount = amount;
+    let paymentAmount = Math.round(amount);
+    let creditedAmount = 0;
+
+    if (paymentMethod === 'M-PESA') {
+      paymentCurrency = 'KES';
+      if (inputCurrency === 'USD') {
+        paymentAmount = Math.round(ExchangeRateService.convertUSDtoKES(amount, activeRate));
+        creditedAmount = amount;
+      } else {
+        paymentAmount = Math.round(amount);
+        creditedAmount = ExchangeRateService.convertKEStoUSD(amount, activeRate);
+      }
+    } else {
+      if (inputCurrency === 'USD') {
+        paymentCurrency = 'USD';
+        paymentAmount = Math.round(amount);
+        creditedAmount = amount;
+      } else {
+        paymentCurrency = 'KES';
+        paymentAmount = Math.round(amount);
+        creditedAmount = ExchangeRateService.convertKEStoUSD(amount, activeRate);
+      }
+    }
+
+    console.log('[PAYMENT]');
+    console.log(`Payment Currency: ${paymentCurrency}`);
+    console.log(`Wallet Currency: ${walletCurrency}`);
+    console.log(`Original Amount: ${originalAmount}`);
+    console.log(`Exchange Rate: ${activeRate}`);
+    console.log(`Credited Amount: ${creditedAmount.toFixed(2)} USD`);
+
+    // Duplicate Protection / Idempotency check:
+    const recentCutoff = new Date(Date.now() - 30 * 1000).toISOString();
+    const existingTx = db.paymentTransactions.find(tx =>
+      tx.userId === userId &&
+      tx.phone === formattedPhone &&
+      tx.status === 'Pending' &&
+      tx.createdAt > recentCutoff &&
+      Math.abs(tx.amount - paymentAmount) < 1
+    );
+
+    if (existingTx) {
+      console.log(`[PAYMENT STAGE] Idempotent deposit request detected. Returning existing payment: Ref ${existingTx.reference}`);
+      return {
+        reference: existingTx.reference || existingTx.invoiceId || '',
+        invoiceId: existingTx.invoiceId,
+        url: '',
+        customerMessage: 'STK Push already sent to your phone. Check your phone to complete payment.',
+        status: 'Pending',
+        dbInsertMs: 0,
+        apiMs: 0,
+      };
+    }
+
     // Format PO-DEP-XXXXXXXX
     const randomHex = crypto.randomBytes(4).toString('hex').toUpperCase();
     const poReference = `PO-DEP-${randomHex}`;
@@ -49,54 +111,81 @@ export class IntaSendService {
     let checkoutUrl = '';
     let customerMessage = '';
 
-    console.log(`[PAYMENT STAGE] Payment created: Ref ${poReference} | User: ${userId} | Amount: ${currency} ${amount}`);
+    console.log(`[PAYMENT STAGE] Payment created: Ref ${poReference} | User: ${userId} | Amount: ${paymentCurrency} ${paymentAmount}`);
     console.log(`[PAYMENT STAGE] Checkout initiated: Method ${paymentMethod}, Target Phone: ${formattedPhone}`);
+
+    const tApiStart = Date.now();
+    if (t0) {
+      console.log(`[PAYMENT TIMER] IntaSend API Request Sent: +${tApiStart - t0} ms`);
+    }
 
     if (paymentMethod === 'M-PESA') {
       if (!secretKey) {
         throw new Error('INTASEND_SECRET_KEY is required in environment variables for Live IntaSend Payments.');
       }
 
-      try {
-        const payload = {
-          phone_number: formattedPhone,
-          email: userEmail,
-          amount: Math.round(amount),
-          currency: currency.toUpperCase(),
-          api_ref: poReference,
-        };
+      const payload = {
+        phone_number: formattedPhone,
+        email: userEmail,
+        amount: paymentAmount,
+        currency: paymentCurrency,
+        api_ref: poReference,
+      };
 
-        console.log('[INTASEND SERVICE] Sending STK Push to IntaSend Live API:', payload);
+      console.log('[INTASEND SERVICE] Sending STK Push to IntaSend Live API:', payload);
 
-        const response = await axios.post(`${baseUrl}/payment/mpesa-stk-push/`, payload, {
+      const makeStkRequest = async () => {
+        return await axios.post(`${baseUrl}/payment/mpesa-stk-push/`, payload, {
           headers: {
             Authorization: `Bearer ${secretKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 15000,
+          timeout: 12000,
         });
+      };
 
-        const data = response.data;
-        console.log('[INTASEND SERVICE] STK Push Response:', data);
-
-        invoiceId = data.invoice?.invoice_id || data.id || data.tracking_id || `INTA-${Date.now()}`;
-        customerMessage = data.customer_message || 'Please check your phone and enter your M-Pesa PIN.';
+      let response;
+      try {
+        response = await makeStkRequest();
       } catch (error: any) {
-        console.error('[INTASEND STK PUSH ERROR]', error.response?.data || error.message);
-        throw new Error(
-          error.response?.data?.errors?.[0]?.detail ||
-          error.response?.data?.message ||
-          error.response?.data?.detail ||
-          'Failed to initiate IntaSend STK Push payment.'
-        );
+        const isNetworkError = !error.response || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || (error.response?.status >= 500 && error.response?.status < 600);
+        if (isNetworkError) {
+          console.warn('[INTASEND SERVICE] STK Push encountered temporary error. Retrying once after 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          try {
+            response = await makeStkRequest();
+          } catch (retryError: any) {
+            console.error('[INTASEND STK PUSH RETRY ERROR]', retryError.response?.data || retryError.message);
+            throw new Error(
+              retryError.response?.data?.errors?.[0]?.detail ||
+              retryError.response?.data?.message ||
+              retryError.response?.data?.detail ||
+              'Failed to initiate IntaSend STK Push payment after retry.'
+            );
+          }
+        } else {
+          console.error('[INTASEND STK PUSH ERROR]', error.response?.data || error.message);
+          throw new Error(
+            error.response?.data?.errors?.[0]?.detail ||
+            error.response?.data?.message ||
+            error.response?.data?.detail ||
+            'Failed to initiate IntaSend STK Push payment.'
+          );
+        }
       }
+
+      const data = response.data;
+      console.log('[INTASEND SERVICE] STK Push Response:', data);
+
+      invoiceId = data.invoice?.invoice_id || data.id || data.tracking_id || `INTA-${Date.now()}`;
+      customerMessage = data.customer_message || 'Please check your phone and enter your M-Pesa PIN.';
     } else {
       // Visa / Mastercard (Card) Checkout API
       try {
         const payload = {
           public_key: publicKey || secretKey,
-          amount: Math.round(amount),
-          currency: currency.toUpperCase(),
+          amount: paymentAmount,
+          currency: paymentCurrency,
           email: userEmail,
           phone_number: formattedPhone,
           method: 'CARD',
@@ -106,7 +195,7 @@ export class IntaSendService {
 
         const response = await axios.post(`${baseUrl}/checkout/`, payload, {
           headers: secretKey ? { Authorization: `Bearer ${secretKey}` } : {},
-          timeout: 15000,
+          timeout: 12000,
         });
 
         const data = response.data;
@@ -123,7 +212,14 @@ export class IntaSendService {
       }
     }
 
+    const tApiDone = Date.now();
+    const apiMs = tApiDone - tApiStart;
+    if (t0) {
+      console.log(`[PAYMENT TIMER] IntaSend Response Received: +${tApiDone - t0} ms (API time: ${apiMs} ms)`);
+    }
+
     // Save pending payment transaction record to database
+    const tDbStart = Date.now();
     const paymentTx: PaymentTransaction = {
       id: 'pay_' + Math.random().toString(36).substr(2, 9),
       userId,
@@ -131,16 +227,26 @@ export class IntaSendService {
       provider: 'intasend',
       paymentMethod,
       phone: formattedPhone,
-      amount,
-      currency: currency.toUpperCase(),
+      amount: paymentAmount,
+      currency: paymentCurrency,
       status: 'Pending',
       reference: poReference,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      paymentCurrency,
+      walletCurrency,
+      exchangeRate: activeRate,
+      originalAmount,
+      creditedAmount,
     };
 
     db.paymentTransactions.push(paymentTx);
     db.save();
+    const dbInsertMs = Date.now() - tDbStart;
+
+    if (t0) {
+      console.log(`[PAYMENT TIMER] Payment Record Created: ${dbInsertMs} ms`);
+    }
 
     console.log(`[PAYMENT STAGE] Payment pending saved: ID ${paymentTx.id} | Invoice ${invoiceId} | Ref ${poReference}`);
 
@@ -150,6 +256,8 @@ export class IntaSendService {
       url: checkoutUrl,
       customerMessage,
       status: 'Pending',
+      dbInsertMs,
+      apiMs,
     };
   }
 
@@ -309,6 +417,7 @@ export class IntaSendService {
    * Credits user REAL wallet safely using atomic lock / transaction
    */
   private static async creditUserWallet(paymentTx: PaymentTransaction, payload: any): Promise<void> {
+    const tCreditStart = Date.now();
     const db = Database.getInstance();
 
     if (paymentTx.status === 'Completed') {
@@ -325,10 +434,20 @@ export class IntaSendService {
     }
 
     const depositAmountKes = paymentTx.amount;
-    const USD_TO_KES_RATE = 130;
+    const walletCurrency = paymentTx.walletCurrency || 'USD';
+    const lockedRate = paymentTx.exchangeRate || ExchangeRateService.getRate('USD', 'KES');
     
-    // Convert KES deposit to USD Real Wallet balance
-    const creditedUsd = paymentTx.currency === 'USD' ? depositAmountKes : depositAmountKes / USD_TO_KES_RATE;
+    // Retrieve credited amount using locked rate from payment creation
+    const creditedUsd = paymentTx.creditedAmount !== undefined
+      ? paymentTx.creditedAmount
+      : (paymentTx.currency === 'USD' ? depositAmountKes : ExchangeRateService.convertKEStoUSD(depositAmountKes, lockedRate));
+
+    console.log('[PAYMENT]');
+    console.log(`Payment Currency: ${paymentTx.paymentCurrency || paymentTx.currency || 'KES'}`);
+    console.log(`Wallet Currency: ${walletCurrency}`);
+    console.log(`Original Amount: ${paymentTx.originalAmount || depositAmountKes}`);
+    console.log(`Exchange Rate: ${lockedRate}`);
+    console.log(`Credited Amount: ${creditedUsd.toFixed(2)} USD`);
 
     // 1. Update status to Completed
     paymentTx.status = 'Completed';
@@ -379,31 +498,34 @@ export class IntaSendService {
 
     db.notifications.push(notif);
 
-    // 6. Send Email Receipt
-    const targetUser = db.users.find(u => u.id === userId);
-    if (targetUser?.email) {
-      EmailService.sendDepositEmail(
-        targetUser.email,
-        targetUser.fullName || targetUser.email.split('@')[0],
-        `KES ${depositAmountKes.toLocaleString()} ($${creditedUsd.toFixed(2)} USD)`,
-        'KES',
-        paymentTx.reference || paymentTx.invoiceId
-      )
-        .then(() => console.log(`[PAYMENT STAGE] Email sent: Deposit receipt to ${targetUser.email}`))
-        .catch(err => console.error('[INTASEND EMAIL ERROR]', err));
-    }
-
-    // 7. Send SMS Receipt
-    const userPhone = paymentTx.phone || targetUser?.phoneNumber;
-    if (userPhone) {
-      SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes.toLocaleString()}`, paymentTx.reference || paymentTx.invoiceId)
-        .then(() => console.log(`[PAYMENT STAGE] SMS sent: Deposit notification to ${userPhone}`))
-        .catch(err => console.error('[INTASEND SMS ERROR]', err));
-    }
-
-    // 8. Commit changes to persistent database
+    // Commit changes to persistent database immediately
     db.save();
-
+    const tCreditDone = Date.now();
+    const creditMs = tCreditDone - tCreditStart;
+    console.log(`[PAYMENT TIMER] Wallet Credit: ${creditMs} ms`);
     console.log(`[INTASEND CREDIT SUCCESS] User ${userId} wallet successfully credited +$${creditedUsd.toFixed(2)} USD for Ref: ${paymentTx.reference}`);
+
+    // Non-blocking async Email/SMS after database persistence
+    setImmediate(() => {
+      const targetUser = db.users.find(u => u.id === userId);
+      if (targetUser?.email) {
+        EmailService.sendDepositEmail(
+          targetUser.email,
+          targetUser.fullName || targetUser.email.split('@')[0],
+          `KES ${depositAmountKes.toLocaleString()} ($${creditedUsd.toFixed(2)} USD)`,
+          'KES',
+          paymentTx.reference || paymentTx.invoiceId
+        )
+          .then(() => console.log(`[PAYMENT STAGE] Email sent: Deposit receipt to ${targetUser.email}`))
+          .catch(err => console.error('[INTASEND EMAIL ERROR]', err));
+      }
+
+      const userPhone = paymentTx.phone || targetUser?.phoneNumber;
+      if (userPhone) {
+        SMSService.sendDepositSMS(userPhone, `KES ${depositAmountKes.toLocaleString()}`, paymentTx.reference || paymentTx.invoiceId)
+          .then(() => console.log(`[PAYMENT STAGE] SMS sent: Deposit notification to ${userPhone}`))
+          .catch(err => console.error('[INTASEND SMS ERROR]', err));
+      }
+    });
   }
 }

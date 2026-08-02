@@ -31,6 +31,7 @@ export interface DatabaseSchema {
   mpesaTransactions: MpesaTransaction[];
   paymentTransactions: PaymentTransaction[];
   withdrawalRequests: WithdrawalRequest[];
+  exchangeRates: Record<string, number>;
 }
 
 const defaultSchema: DatabaseSchema = {
@@ -46,7 +47,10 @@ const defaultSchema: DatabaseSchema = {
   activityLogs: [],
   mpesaTransactions: [],
   paymentTransactions: [],
-  withdrawalRequests: []
+  withdrawalRequests: [],
+  exchangeRates: {
+    'USD_KES': 130.0
+  }
 };
 
 // PBKDF2 Password Hashing Utility
@@ -123,7 +127,7 @@ export class Database {
             prisma.withdrawalRequest.findMany(),
           ]);
 
-          this.data.users = users.map(u => ({
+          this.data.users = users.map((u: any) => ({
             id: u.id,
             email: u.email,
             passwordHash: u.passwordHash,
@@ -140,7 +144,7 @@ export class Database {
             createdAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.wallets = wallets.map(w => ({
+          this.data.wallets = wallets.map((w: any) => ({
             id: w.id,
             userId: w.userId,
             asset: w.asset,
@@ -149,7 +153,7 @@ export class Database {
             updatedAt: w.updatedAt ? w.updatedAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.transactions = transactions.map(t => ({
+          this.data.transactions = transactions.map((t: any) => ({
             id: t.id,
             userId: t.userId,
             walletId: t.walletId,
@@ -163,7 +167,7 @@ export class Database {
             createdAt: t.createdAt ? t.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.trades = trades.map(tr => ({
+          this.data.trades = trades.map((tr: any) => ({
             id: tr.id,
             userId: tr.userId,
             type: tr.type as any,
@@ -185,7 +189,7 @@ export class Database {
             settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : undefined
           }));
 
-          this.data.supportTickets = supportTickets.map(st => ({
+          this.data.supportTickets = supportTickets.map((st: any) => ({
             id: st.id,
             userId: st.userId,
             userEmail: st.userEmail,
@@ -194,7 +198,7 @@ export class Database {
             description: st.description,
             status: st.status as any,
             createdAt: st.createdAt ? st.createdAt.toISOString() : new Date().toISOString(),
-            replies: (st.replies || []).map(r => ({
+            replies: (st.replies || []).map((r: any) => ({
               id: r.id,
               userId: r.userId,
               fullName: r.fullName,
@@ -204,7 +208,7 @@ export class Database {
             }))
           }));
 
-          this.data.announcements = announcements.map(a => ({
+          this.data.announcements = announcements.map((a: any) => ({
             id: a.id,
             title: a.title,
             content: a.content,
@@ -212,7 +216,7 @@ export class Database {
             createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.notifications = notifications.map(n => ({
+          this.data.notifications = notifications.map((n: any) => ({
             id: n.id,
             userId: n.userId,
             title: n.title,
@@ -221,14 +225,14 @@ export class Database {
             createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.referralCodes = referralCodes.map(rc => ({
+          this.data.referralCodes = referralCodes.map((rc: any) => ({
             id: rc.id,
             userId: rc.userId,
             code: rc.code,
             createdAt: rc.createdAt ? rc.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.referralEarnings = referralEarnings.map(re => ({
+          this.data.referralEarnings = referralEarnings.map((re: any) => ({
             id: re.id,
             userId: re.userId,
             referrerId: re.referrerId,
@@ -237,7 +241,7 @@ export class Database {
             createdAt: re.createdAt ? re.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.activityLogs = activityLogs.map(al => ({
+          this.data.activityLogs = activityLogs.map((al: any) => ({
             id: al.id,
             userId: al.userId || undefined,
             action: al.action,
@@ -246,7 +250,7 @@ export class Database {
             createdAt: al.createdAt ? al.createdAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.mpesaTransactions = mpesaTxs.map(m => ({
+          this.data.mpesaTransactions = mpesaTxs.map((m: any) => ({
             id: m.id,
             userId: m.userId,
             phone: m.phone,
@@ -261,7 +265,7 @@ export class Database {
             updatedAt: m.updatedAt ? m.updatedAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.paymentTransactions = paymentTxs.map(p => ({
+          this.data.paymentTransactions = paymentTxs.map((p: any) => ({
             id: p.id,
             userId: p.userId,
             invoiceId: p.invoiceId,
@@ -276,7 +280,7 @@ export class Database {
             updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString()
           }));
 
-          this.data.withdrawalRequests = withdrawalReqs.map(w => ({
+          this.data.withdrawalRequests = withdrawalReqs.map((w: any) => ({
             id: w.id,
             referenceId: w.referenceId,
             userId: w.userId,
@@ -744,6 +748,25 @@ export class Database {
   public get mpesaTransactions(): MpesaTransaction[] { return this.data.mpesaTransactions || (this.data.mpesaTransactions = []); }
   public get paymentTransactions(): PaymentTransaction[] { return this.data.paymentTransactions || (this.data.paymentTransactions = []); }
   public get withdrawalRequests(): WithdrawalRequest[] { return this.data.withdrawalRequests || (this.data.withdrawalRequests = []); }
+  public getExchangeRates(): Record<string, number> {
+    if (!this.data.exchangeRates) {
+      this.data.exchangeRates = { 'USD_KES': 130.0 };
+    }
+    return this.data.exchangeRates;
+  }
+  public getExchangeRate(fromCurrency: string = 'USD', toCurrency: string = 'KES'): number {
+    const pair = `${fromCurrency.toUpperCase()}_${toCurrency.toUpperCase()}`;
+    const rates = this.getExchangeRates();
+    if (rates[pair]) return rates[pair];
+    if (pair === 'USD_KES') return 130.0;
+    return 1.0;
+  }
+  public setExchangeRate(fromCurrency: string, toCurrency: string, rate: number): void {
+    const pair = `${fromCurrency.toUpperCase()}_${toCurrency.toUpperCase()}`;
+    const rates = this.getExchangeRates();
+    rates[pair] = rate;
+    this.save();
+  }
 
   // Seed default data
   private seed() {

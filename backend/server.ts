@@ -19,6 +19,7 @@ import webhookRouter from './src/routes/webhook.routes';
 import passwordRouter from './src/routes/password.routes';
 import { SMSService } from './src/services/sms.service';
 import { EmailService } from './src/services/email.service';
+import { ExchangeRateService } from './src/services/exchangeRate.service';
 import { authenticate, generateSessionToken, verifySessionToken } from './src/middleware/auth.middleware';
 
 let aiClient: GoogleGenAI | null = null;
@@ -1386,7 +1387,7 @@ app.get('/api/admin/payments', authenticate, requireAdmin, (req, res) => {
       ...p,
       reference: p.reference || p.invoiceId,
       userEmail: user ? user.email : 'Unknown User',
-      userFullName: user ? user.fullName : (user ? user.email.split('@')[0] : 'Unknown'),
+      userFullName: user?.fullName || (user?.email ? user.email.split('@')[0] : 'Unknown'),
       normalizedStatus,
       created: p.createdAt,
       completed: p.updatedAt,
@@ -1627,6 +1628,41 @@ app.get('/api/admin/stats', authenticate, requireAdmin, (req, res) => {
 app.get('/api/admin/logs', authenticate, requireAdmin, (req, res) => {
   const sortedLogs = db.activityLogs.sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100);
   res.json(sortedLogs);
+});
+
+// Exchange Rate Management Endpoints
+app.get('/api/exchange-rates', (req, res) => {
+  const rates = ExchangeRateService.getAllRates();
+  const usdKesRate = ExchangeRateService.getRate('USD', 'KES');
+  res.json({ success: true, usdKesRate, rates });
+});
+
+app.post('/api/admin/exchange-rates', authenticate, requireAdmin, (req: any, res) => {
+  try {
+    const { rate, pair, fromCurrency, toCurrency } = req.body;
+    const numericRate = parseFloat(rate);
+    if (isNaN(numericRate) || numericRate <= 0) {
+      return res.status(400).json({ error: 'Please provide a valid positive exchange rate.' });
+    }
+
+    const from = fromCurrency || (pair ? pair.split('/')[0] : 'USD');
+    const to = toCurrency || (pair ? pair.split('/')[1] : 'KES');
+
+    const updatedRate = ExchangeRateService.setRate(numericRate, from, to);
+    logActivity(req.userId, 'Exchange Rate Updated', `Admin updated ${from}/${to} exchange rate to ${updatedRate}`, req);
+
+    return res.json({
+      success: true,
+      message: `Successfully updated ${from}/${to} exchange rate to ${updatedRate}`,
+      rate: updatedRate,
+      pair: `${from}/${to}`,
+      usdKesRate: ExchangeRateService.getRate('USD', 'KES'),
+      rates: ExchangeRateService.getAllRates()
+    });
+  } catch (error: any) {
+    console.error('[ADMIN EXCHANGE RATE ERROR]', error);
+    return res.status(500).json({ error: error.message || 'Failed to update exchange rate.' });
+  }
 });
 
 // ============================================================================
