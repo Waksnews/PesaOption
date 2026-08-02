@@ -1,0 +1,17 @@
+{
+  "short_name": "PesaOption",
+  "name": "PesaOption | Trade Binary Options, Forex & Crypto Platform",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "Trade binary options, forex, cryptocurrencies, indices and commodities on PesaOption. Instant M-Pesa STK push deposits, fast execution, and secure payouts."
+}

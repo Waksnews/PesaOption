@@ -17,7 +17,12 @@ import { useMarketStore } from '../stores/marketStore';
 import { useApp } from '../context/AppContext';
 import { TradingChart } from './TradingChart';
 
-export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') => void }> = ({ onEnterApp }) => {
+import { SEO } from './SEO';
+
+export const LandingView: React.FC<{ 
+  onEnterApp: (view: 'login' | 'register') => void;
+  onNavigate?: (page: string) => void;
+}> = ({ onEnterApp, onNavigate }) => {
   const { user } = useApp();
   const { prices, selectedSymbol, setSelectedSymbol } = useMarketStore();
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
@@ -89,15 +94,15 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
       canonical.setAttribute('rel', 'canonical');
       document.head.appendChild(canonical);
     }
-    canonical.setAttribute('href', 'https://pesaoption.com/');
+    canonical.setAttribute('href', 'https://pesaoption.site.je/');
 
     const schemaData = [
       {
         "@context": "https://schema.org",
         "@type": "Organization",
         "name": "PesaOption",
-        "url": "https://pesaoption.com",
-        "logo": "https://pesaoption.com/logo.png",
+        "url": "https://pesaoption.site.je",
+        "logo": "https://pesaoption.site.je/favicon.svg",
         "description": "Real online binary options, forex, and cryptocurrency trading platform with instant M-Pesa deposits.",
         "contactPoint": {
           "@type": "ContactPoint",
@@ -111,10 +116,10 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
         "@context": "https://schema.org",
         "@type": "WebSite",
         "name": "PesaOption Trading Platform",
-        "url": "https://pesaoption.com",
+        "url": "https://pesaoption.site.je",
         "potentialAction": {
           "@type": "SearchAction",
-          "target": "https://pesaoption.com/#markets?q={search_term_string}",
+          "target": "https://pesaoption.site.je/#markets?q={search_term_string}",
           "query-input": "required name=search_term_string"
         }
       },
@@ -122,7 +127,7 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
         "@context": "https://schema.org",
         "@type": "FinancialService",
         "name": "PesaOption Digital & Binary Trading",
-        "priceRange": "$10 - $10,000",
+        "priceRange": "$1 - $10,000",
         "currenciesAccepted": "USD, KES, BTC, ETH",
         "paymentAccepted": "M-Pesa, Visa, Mastercard, Bank Wire, Cryptocurrency"
       },
@@ -238,12 +243,14 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center space-x-8 text-xs uppercase tracking-wider font-semibold text-slate-300">
+          <nav className="hidden lg:flex items-center space-x-6 text-xs uppercase tracking-wider font-semibold text-slate-300">
+            <span onClick={() => onNavigate && onNavigate('about')} className="hover:text-[#38BDF8] transition cursor-pointer">About Us</span>
+            <span onClick={() => onNavigate && onNavigate('how-to-deposit')} className="hover:text-[#38BDF8] transition cursor-pointer">Deposit Guide</span>
+            <span onClick={() => onNavigate && onNavigate('how-to-withdraw')} className="hover:text-[#38BDF8] transition cursor-pointer">Withdrawal Guide</span>
             <a href="#why-us" className="hover:text-[#38BDF8] transition">Why Us</a>
             <a href="#platform" className="hover:text-[#38BDF8] transition">Platform</a>
             <a href="#how-it-works" className="hover:text-[#38BDF8] transition">How It Works</a>
-            <a href="#testimonials" className="hover:text-[#38BDF8] transition">Reviews</a>
-            <a href="#faq" className="hover:text-[#38BDF8] transition">FAQ</a>
+            <span onClick={() => onNavigate && onNavigate('faq')} className="hover:text-[#38BDF8] transition cursor-pointer">FAQ</span>
           </nav>
 
           {/* User Auth Action CTAs */}
@@ -299,11 +306,14 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
               exit={{ opacity: 0, height: 0 }}
               className="lg:hidden mt-3 py-4 border-t border-slate-800 flex flex-col space-y-3.5 px-2"
             >
+              <span onClick={() => { if (onNavigate) onNavigate('about'); setMobileMenuOpen(false); }} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold cursor-pointer">About Us</span>
+              <span onClick={() => { if (onNavigate) onNavigate('how-to-deposit'); setMobileMenuOpen(false); }} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold cursor-pointer">How to Deposit (M-Pesa)</span>
+              <span onClick={() => { if (onNavigate) onNavigate('how-to-withdraw'); setMobileMenuOpen(false); }} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold cursor-pointer">How to Withdraw</span>
               <a href="#why-us" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold">Why Us</a>
               <a href="#platform" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold">Platform</a>
               <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold">How It Works</a>
-              <a href="#testimonials" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold">Reviews</a>
-              <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold">FAQ</a>
+              <span onClick={() => { if (onNavigate) onNavigate('faq'); setMobileMenuOpen(false); }} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold cursor-pointer">FAQ</span>
+              <span onClick={() => { if (onNavigate) onNavigate('contact'); setMobileMenuOpen(false); }} className="text-slate-300 hover:text-[#38BDF8] text-sm font-semibold cursor-pointer">Contact Support</span>
 
               <div className="pt-3 border-t border-slate-800 flex flex-col gap-2.5">
                 {user ? (
@@ -941,18 +951,23 @@ export const LandingView: React.FC<{ onEnterApp: (view: 'login' | 'register') =>
             <ul className="space-y-2">
               <li className="hover:text-white cursor-pointer" onClick={() => onEnterApp('register')}>Binary Options</li>
               <li className="hover:text-white cursor-pointer" onClick={() => onEnterApp('register')}>Demo Account</li>
-              <li className="hover:text-white cursor-pointer" onClick={() => onEnterApp('login')}>M-Pesa Deposits</li>
-              <li className="hover:text-white cursor-pointer" onClick={() => onEnterApp('login')}>Withdrawals</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate ? onNavigate('how-to-deposit') : onEnterApp('login')}>M-Pesa Deposits</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate ? onNavigate('how-to-withdraw') : onEnterApp('login')}>Withdrawals</li>
             </ul>
           </div>
 
           <div>
             <div className="font-bold text-white uppercase text-[11px] tracking-wider mb-3">Support & Legal</div>
             <ul className="space-y-2">
-              <li className="hover:text-white cursor-pointer">Contact Support</li>
-              <li className="hover:text-white cursor-pointer">Privacy Policy</li>
-              <li className="hover:text-white cursor-pointer">Terms of Service</li>
-              <li className="hover:text-white cursor-pointer">Risk Disclosure</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('about')}>About Us</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('contact')}>Contact Support</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('faq')}>FAQ</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('privacy')}>Privacy Policy</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('terms')}>Terms of Service</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('risk')}>Risk Disclosure</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('aml')}>AML Policy</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('kyc')}>KYC Policy</li>
+              <li className="hover:text-white cursor-pointer" onClick={() => onNavigate && onNavigate('cookie')}>Cookie Policy</li>
             </ul>
           </div>
 

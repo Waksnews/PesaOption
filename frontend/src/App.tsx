@@ -9,14 +9,37 @@ import { LandingView } from './components/LandingView';
 import { AuthView } from './components/AuthView';
 import { DashboardView } from './components/DashboardView';
 import { ResetPassword } from './components/ResetPassword';
+import { 
+  AboutPage, ContactPage, FAQPage, HowToDepositPage, HowToWithdrawPage, PolicyPage 
+} from './components/pages/PublicPages';
 import { HashRouter } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 
 const InnerRouter: React.FC = () => {
   const { user, loading } = useApp();
-  const [screen, setScreen] = useState<'landing' | 'login' | 'register' | 'forgot' | 'reset'>('landing');
+  const [screen, setScreen] = useState<string>('landing');
 
-  // Check if current URL contains a reset password token query param or path
+  // Helper to determine route from window.location.hash or window.location.pathname
+  const getActiveRouteFromUrl = () => {
+    const hash = window.location.hash.toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+
+    if (hash.includes('about') || path.includes('/about')) return 'about';
+    if (hash.includes('contact') || path.includes('/contact')) return 'contact';
+    if (hash.includes('faq') || path.includes('/faq')) return 'faq';
+    if (hash.includes('how-to-deposit') || path.includes('/how-to-deposit')) return 'how-to-deposit';
+    if (hash.includes('how-to-withdraw') || path.includes('/how-to-withdraw')) return 'how-to-withdraw';
+    if (hash.includes('privacy-policy') || path.includes('/privacy-policy')) return 'privacy';
+    if (hash.includes('terms-of-service') || path.includes('/terms-of-service')) return 'terms';
+    if (hash.includes('risk-disclosure') || path.includes('/risk-disclosure')) return 'risk';
+    if (hash.includes('aml-policy') || path.includes('/aml-policy')) return 'aml';
+    if (hash.includes('kyc-policy') || path.includes('/kyc-policy')) return 'kyc';
+    if (hash.includes('cookie-policy') || path.includes('/cookie-policy')) return 'cookie';
+    if (hash.includes('login') || path.includes('/login')) return 'login';
+    if (hash.includes('register') || path.includes('/register')) return 'register';
+    return null;
+  };
+
   const isResetUrl = () => {
     return (
       window.location.pathname.includes('/reset-password') ||
@@ -28,12 +51,30 @@ const InnerRouter: React.FC = () => {
   const [isResetRoute, setIsResetRoute] = useState(isResetUrl());
 
   useEffect(() => {
+    const initialRoute = getActiveRouteFromUrl();
+    if (initialRoute) {
+      setScreen(initialRoute);
+    }
+
     const handleLocationChange = () => {
       setIsResetRoute(isResetUrl());
+      const route = getActiveRouteFromUrl();
+      if (route) setScreen(route);
     };
+
     window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
   }, []);
+
+  const navigateToPage = (pageName: string) => {
+    window.location.hash = `#${pageName}`;
+    setScreen(pageName);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   if (loading) {
     return (
@@ -60,19 +101,37 @@ const InnerRouter: React.FC = () => {
     );
   }
 
-  // If user is authenticated, route immediately to dashboard
-  if (user) {
+  // Render Public Pages if active screen is a public page
+  if (screen === 'about') return <AboutPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'contact') return <ContactPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'faq') return <FAQPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'how-to-deposit') return <HowToDepositPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'how-to-withdraw') return <HowToWithdrawPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'privacy') return <PolicyPage type="privacy" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'terms') return <PolicyPage type="terms" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'risk') return <PolicyPage type="risk" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'aml') return <PolicyPage type="aml" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'kyc') return <PolicyPage type="kyc" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'cookie') return <PolicyPage type="cookie" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+
+  // If user is authenticated and on standard screen, route to dashboard
+  if (user && screen !== 'login' && screen !== 'register') {
     return <DashboardView />;
   }
 
-  // Otherwise, route based on current guest screen selection
+  // Guest screen handling
   if (screen === 'landing') {
-    return <LandingView onEnterApp={(mode) => setScreen(mode)} />;
+    return (
+      <LandingView 
+        onEnterApp={(mode) => setScreen(mode)} 
+        onNavigate={navigateToPage}
+      />
+    );
   }
 
   return (
     <AuthView 
-      initialMode={screen} 
+      initialMode={screen as 'login' | 'register'} 
       onBackToLanding={() => setScreen('landing')} 
     />
   );
