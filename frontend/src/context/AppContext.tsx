@@ -269,22 +269,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Handle auto load of user profile on mount / token change
   useEffect(() => {
+    let isMounted = true;
+
     const initProfile = async () => {
-      if (token) {
-        try {
-          const profile = await callApi('/api/auth/me');
+      if (!token) {
+        // Guest user: Unblock UI instantly, fetch public announcements in background
+        if (isMounted) setLoading(false);
+        fetchAnnouncements();
+        return;
+      }
+
+      try {
+        // Authenticated user: Fetch profile and user portfolio data concurrently
+        const [profile] = await Promise.all([
+          callApi('/api/auth/me'),
+          refreshUserData().catch(err => console.error('Background portfolio load error:', err))
+        ]);
+
+        if (isMounted) {
           setUser(profile);
-          await refreshUserData();
-        } catch (e) {
-          console.error('Invalid token, logging out', e);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('Invalid token, logging out', e);
+        if (isMounted) {
           logout();
+          setLoading(false);
         }
       }
+
       fetchAnnouncements();
-      setLoading(false);
     };
 
     initProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
 
   // SSE Real-Time pricing connection setup
