@@ -15,12 +15,10 @@ services:
         value: sandbox
       - key: AT_API_KEY
         sync: false
-      - key: INTASEND_PUBLISHABLE_KEY
+      - key: LIPIA_API_KEY
         sync: false
-      - key: INTASEND_SECRET_KEY
-        sync: false
-      - key: INTASEND_WEBHOOK_SECRET
-        sync: false
+      - key: LIPIA_BASE_URL
+        value: https://lipia-api.kreativelabske.com/api/v2
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

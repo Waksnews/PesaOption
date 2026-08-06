@@ -137,7 +137,7 @@ export const AdminView: React.FC = () => {
   const [cfgSmtpPort, setCfgSmtpPort] = useState(ownerConfig?.smtpPort?.toString() || '587');
   const [cfgSmtpUser, setCfgSmtpUser] = useState(ownerConfig?.smtpUser || 'notifications@pesaoption.com');
   const [cfgEmailFrom, setCfgEmailFrom] = useState(ownerConfig?.emailFrom || 'PesaOption System <no-reply@pesaoption.com>');
-  const [cfgIntaSendKey, setCfgIntaSendKey] = useState(ownerConfig?.intaSendPublishableKey || 'ISPubKey_live_sec_8472910482910');
+  const [cfgLipiaApiKey, setCfgLipiaApiKey] = useState(ownerConfig?.lipiaApiKey || '');
   const [isUpdatingConfig, setIsUpdatingConfig] = useState<boolean>(false);
 
   useEffect(() => {
@@ -146,7 +146,7 @@ export const AdminView: React.FC = () => {
       setCfgSmtpPort(ownerConfig.smtpPort.toString());
       setCfgSmtpUser(ownerConfig.smtpUser);
       setCfgEmailFrom(ownerConfig.emailFrom);
-      setCfgIntaSendKey(ownerConfig.intaSendPublishableKey);
+      setCfgLipiaApiKey(ownerConfig.lipiaApiKey || '');
     }
   }, [ownerConfig]);
 
@@ -534,14 +534,14 @@ export const AdminView: React.FC = () => {
 
                 <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-850">
                   <div className="flex items-center space-x-3">
-                    <Key className="w-4 h-4 text-amber-400" />
+                    <Key className="w-4 h-4 text-emerald-400" />
                     <div>
-                      <p className="text-xs font-bold text-slate-200">IntaSend Gateway</p>
-                      <p className="text-[10px] font-mono text-slate-500">API Key integration & Webhooks</p>
+                      <p className="text-xs font-bold text-slate-200">Lipia Online Gateway</p>
+                      <p className="text-[10px] font-mono text-slate-500">API Key integration & Callbacks</p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-mono font-bold uppercase rounded-full">
-                    {systemHealth?.intaSendStatus || 'Configured'}
+                  <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase rounded-full">
+                    {systemHealth?.lipiaStatus || 'Configured'}
                   </span>
                 </div>
 
@@ -613,7 +613,7 @@ export const AdminView: React.FC = () => {
                       smtpPort: parseInt(cfgSmtpPort, 10) || 587,
                       smtpUser: cfgSmtpUser,
                       emailFrom: cfgEmailFrom,
-                      intaSendPublishableKey: cfgIntaSendKey
+                      lipiaApiKey: cfgLipiaApiKey
                     });
                     setIsUpdatingConfig(false);
                     if (ok) {
@@ -644,11 +644,12 @@ export const AdminView: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-mono text-slate-400 uppercase">IntaSend Publishable Key</label>
+                    <label className="text-[10px] font-mono text-slate-400 uppercase">Lipia Online API Key</label>
                     <input
-                      type="text"
-                      value={cfgIntaSendKey}
-                      onChange={e => setCfgIntaSendKey(e.target.value)}
+                      type="password"
+                      placeholder="e.g. lipia_live_..."
+                      value={cfgLipiaApiKey}
+                      onChange={e => setCfgLipiaApiKey(e.target.value)}
                       className="w-full mt-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:border-amber-500 focus:outline-none"
                     />
                   </div>
@@ -751,7 +752,7 @@ export const AdminView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide flex items-center space-x-2">
                   <ArrowDownLeft className="w-5 h-5 text-emerald-400" />
-                  <span>IntaSend Payment Deposits Management</span>
+                  <span>Lipia Payment Deposits Management</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
                   Monitor live M-PESA STK Push & Card Deposit transactions with automatic wallet synchronization.

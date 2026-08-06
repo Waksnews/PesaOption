@@ -243,7 +243,7 @@ export class EmailService {
               <p style="color: #94A3B8; font-size: 14px;">Your account has been successfully setup and provisioned with both Real and Demo balances.</p>
             </div>
             <p style="color: #94A3B8; font-size: 13px; line-height: 1.6; margin-top: 24px;">
-              You can now deposit funds using M-Pesa, IntaSend, or Crypto and begin trading options, forex, and digital assets instantly.
+              You can now deposit funds using M-Pesa, Lipia Online, or Crypto and begin trading options, forex, and digital assets instantly.
             </p>
             <div class="footer">
               &copy; ${appName} Trading Platform. All rights reserved.<br>

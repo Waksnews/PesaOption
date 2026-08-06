@@ -302,7 +302,7 @@ model PaymentTransaction {
   id            String        @id @default(uuid())
   userId        String        @map("user_id")
   invoiceId     String        @unique @map("invoice_id")
-  provider      String        @default("intasend")
+  provider      String        @default("lipia")
   paymentMethod String        @default("M-PESA") @map("payment_method")
   phone         String        @default("")
   amount        Decimal       @default(0.00) @db.Decimal(16, 2)

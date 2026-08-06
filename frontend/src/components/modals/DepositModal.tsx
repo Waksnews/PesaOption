@@ -81,7 +81,7 @@ export const DepositModal: React.FC = () => {
     }
   }, [depositModalOpen]);
 
-  // Polling Engine: Checks IntaSend payment status every 2 seconds for up to 120 seconds
+  // Polling Engine: Checks Lipia payment status every 5 seconds for up to 120 seconds
   useEffect(() => {
     let intervalId: any = null;
     let countdownId: any = null;
@@ -98,7 +98,7 @@ export const DepositModal: React.FC = () => {
 
       const pollStatus = async () => {
         try {
-          secondsElapsed += 2;
+          secondsElapsed += 5;
 
           const data = await callApi(`/api/payments/${invoiceId}`);
 
@@ -113,7 +113,7 @@ export const DepositModal: React.FC = () => {
             setLiveStatusMessage('Payment failed');
             setErrorReason(data.failedReason || 'The payment transaction was declined or failed.');
             setStep('failed');
-            addToast('Deposit Failed', data.failedReason || 'IntaSend payment failed.', 'error');
+            addToast('Deposit Failed', data.failedReason || 'Lipia payment failed.', 'error');
             if (intervalId) clearInterval(intervalId);
             if (countdownId) clearInterval(countdownId);
           } else if (data.status === 'CANCELLED' || data.status === 'Cancelled') {
@@ -131,7 +131,7 @@ export const DepositModal: React.FC = () => {
             if (countdownId) clearInterval(countdownId);
           }
         } catch (err: any) {
-          console.error('[INTASEND STATUS POLL ERROR]', err);
+          console.error('[LIPIA STATUS POLL ERROR]', err);
         }
 
         // Timeout fallback after 120 seconds
@@ -145,7 +145,7 @@ export const DepositModal: React.FC = () => {
       };
 
       pollStatus();
-      intervalId = setInterval(pollStatus, 2000); // Poll every 2 seconds
+      intervalId = setInterval(pollStatus, 5000); // Poll every 5 seconds as specified
     }
 
     return () => {
@@ -182,7 +182,7 @@ export const DepositModal: React.FC = () => {
   const isAmountBelowMin = amountNum > 0 && amountNum < minRequired;
   const isAmountValid = amountNum >= minRequired;
   
-  // IntaSend charge is processed in KES
+  // Lipia charge is processed in KES
   const rate = getUsdKesRate();
   const stkAmountInKes = isKes ? amountNum : Math.round(amountNum * rate);
   const creditedAmountInUsd = isKes ? (rate > 0 ? amountNum / rate : 0) : amountNum;
@@ -208,7 +208,7 @@ export const DepositModal: React.FC = () => {
     setCheckoutUrl(null);
 
     try {
-      // Call IntaSend LIVE deposit endpoint
+      // Call Lipia Online deposit endpoint
       const response = await callApi('/api/payments/deposit', {
         method: 'POST',
         body: JSON.stringify({
@@ -220,7 +220,7 @@ export const DepositModal: React.FC = () => {
         }),
       });
 
-      const refOrInvoice = response.reference || response.invoiceId;
+      const refOrInvoice = response.reference || response.externalReference || response.invoiceId;
       setInvoiceId(refOrInvoice);
       if (response.checkoutUrl || response.url) {
         setCheckoutUrl(response.checkoutUrl || response.url);
@@ -228,10 +228,10 @@ export const DepositModal: React.FC = () => {
 
       setStep('waiting');
     } catch (error: any) {
-      console.error('[INTASEND DEPOSIT INIT ERROR]', error);
-      setErrorReason(error.message || 'Failed to initiate IntaSend payment.');
+      console.error('[LIPIA DEPOSIT INIT ERROR]', error);
+      setErrorReason(error.message || 'Failed to initiate Lipia payment.');
       setStep('failed');
-      addToast('Request Rejected', error.message || 'IntaSend LIVE payment request rejected.', 'error');
+      addToast('Request Rejected', error.message || 'Lipia payment request rejected.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -260,7 +260,7 @@ export const DepositModal: React.FC = () => {
         <div className="p-4 sm:p-5 border-b border-slate-850 flex justify-between items-center bg-slate-950/30 flex-shrink-0">
           <span className="text-xs font-bold text-slate-100 uppercase tracking-widest flex items-center space-x-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>IntaSend LIVE Payment</span>
+            <span>Lipia Online Payment Gateway</span>
           </span>
           <button 
             onClick={handleClose} 
@@ -327,11 +327,11 @@ export const DepositModal: React.FC = () => {
                   {paymentMethod === 'M-PESA' ? <Smartphone className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-200">IntaSend LIVE Gateway</h4>
+                  <h4 className="text-xs font-bold text-slate-200">Lipia Online Gateway</h4>
                   <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
                     {paymentMethod === 'M-PESA'
                       ? 'Instant M-PESA STK Push payment prompt sent directly to your phone handset.'
-                      : 'Secure Card processing via IntaSend Live Checkout.'}
+                      : 'Secure processing via Lipia Online Payment Gateway.'}
                   </p>
                 </div>
               </div>
@@ -403,7 +403,7 @@ export const DepositModal: React.FC = () => {
                 {amountNum >= minRequired && (
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-1.5 text-[10px] font-mono mt-1">
                     <div className="flex justify-between text-slate-400">
-                      <span>IntaSend KES Charge:</span>
+                      <span>Lipia KES Charge:</span>
                       <span className="font-bold text-emerald-400">KES {stkAmountInKes.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-slate-450">
@@ -425,7 +425,7 @@ export const DepositModal: React.FC = () => {
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Communicating with IntaSend...</span>
+                    <span>Communicating with Lipia Online...</span>
                   </>
                 ) : (
                   <>
@@ -449,7 +449,7 @@ export const DepositModal: React.FC = () => {
               <div className="space-y-2">
                 <h4 className="font-bold text-slate-100 text-sm">Preparing secure payment...</h4>
                 <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                  Connecting to IntaSend LIVE gateway. Requesting <strong className="text-emerald-400">KES {stkAmountInKes.toLocaleString()}</strong> charge via <strong className="text-slate-200">{paymentMethod}</strong>.
+                  Connecting to Lipia Online gateway. Requesting <strong className="text-emerald-400">KES {stkAmountInKes.toLocaleString()}</strong> charge via <strong className="text-slate-200">{paymentMethod}</strong>.
                 </p>
               </div>
             </div>
@@ -483,9 +483,9 @@ export const DepositModal: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <h4 className="font-bold text-slate-100 text-sm">Completing Card Payment...</h4>
+                    <h4 className="font-bold text-slate-100 text-sm">Completing Payment...</h4>
                     <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                      Please complete your secure card authentication.
+                      Please complete your secure payment authentication.
                     </p>
                     {invoiceId && (
                       <div className="bg-slate-950 border border-slate-850 px-3 py-1.5 rounded-xl text-[11px] font-mono text-slate-400 inline-block mt-1">
@@ -499,7 +499,7 @@ export const DepositModal: React.FC = () => {
                         rel="noopener noreferrer"
                         className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl mt-2 transition"
                       >
-                        <span>Open IntaSend Checkout</span>
+                        <span>Open Lipia Checkout</span>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
@@ -528,7 +528,7 @@ export const DepositModal: React.FC = () => {
                         <Clock className="w-3 h-3 text-emerald-400" />
                         <span>{secondsRemaining}s remaining...</span>
                       </span>
-                      <span>Polling every 2s</span>
+                      <span>Polling every 5s</span>
                     </div>
                   </div>
                 </div>
@@ -559,7 +559,7 @@ export const DepositModal: React.FC = () => {
                   </div>
                   <div className="flex justify-between border-t border-slate-900/50 pt-1.5">
                     <span className="text-slate-550">Payment Provider:</span>
-                    <span className="text-slate-400 font-bold">IntaSend ({paymentMethod})</span>
+                    <span className="text-slate-400 font-bold">Lipia Online ({paymentMethod})</span>
                   </div>
                 </div>
               </div>

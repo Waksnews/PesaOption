@@ -17,6 +17,7 @@ import mpesaRouter from './src/routes/mpesa.routes';
 import paymentRouter from './src/routes/payment.routes';
 import webhookRouter from './src/routes/webhook.routes';
 import passwordRouter from './src/routes/password.routes';
+import { PaymentController } from './src/controllers/payment.controller';
 import { SMSService } from './src/services/sms.service';
 import { EmailService } from './src/services/email.service';
 import { ExchangeRateService } from './src/services/exchangeRate.service';
@@ -160,6 +161,8 @@ app.get('/sitemap.xml', (req, res) => {
 
 app.use('/api/mpesa', mpesaRouter);
 app.use('/api/payments', paymentRouter);
+app.use('/api/payment', paymentRouter);
+app.post('/api/payment/lipia/callback', PaymentController.handleCallback);
 app.use('/api/webhooks', webhookRouter);
 app.use('/api/auth', passwordRouter);
 
@@ -1830,7 +1833,7 @@ const ownerConfigStore = {
   smtpPort: 587,
   smtpUser: 'notifications@pesaoption.com',
   emailFrom: 'PesaOption System <no-reply@pesaoption.com>',
-  intaSendPublishableKey: 'ISPubKey_live_sec_8472910482910'
+  lipiaApiKey: process.env.LIPIA_API_KEY || ''
 };
 
 // 1. Platform Statistics for Owner
@@ -1866,7 +1869,8 @@ app.get('/api/owner/system-health', authenticate, requireOwner, (req, res) => {
     databaseStatus: 'Healthy',
     databaseSizeKb: dbSizeKb,
     smtpStatus: ownerConfigStore.smtpHost ? 'Configured' : 'Unconfigured',
-    intaSendStatus: ownerConfigStore.intaSendPublishableKey ? 'Configured' : 'Live Sandbox',
+    lipiaStatus: (process.env.LIPIA_API_KEY || ownerConfigStore.lipiaApiKey) ? 'Configured' : 'Unconfigured',
+    intaSendStatus: 'Configured',
     maintenanceMode: ownerConfigStore.maintenanceMode,
     uptimeSeconds: Math.floor(process.uptime())
   });
@@ -1879,14 +1883,14 @@ app.get('/api/owner/config', authenticate, requireOwner, (req, res) => {
 
 // 4. Update Owner Platform Config
 app.post('/api/owner/config', authenticate, requireOwner, (req: any, res) => {
-  const { maintenanceMode, smtpHost, smtpPort, smtpUser, emailFrom, intaSendPublishableKey } = req.body;
+  const { maintenanceMode, smtpHost, smtpPort, smtpUser, emailFrom, lipiaApiKey } = req.body;
   
   if (maintenanceMode !== undefined) ownerConfigStore.maintenanceMode = Boolean(maintenanceMode);
   if (smtpHost !== undefined) ownerConfigStore.smtpHost = smtpHost;
   if (smtpPort !== undefined) ownerConfigStore.smtpPort = Number(smtpPort);
   if (smtpUser !== undefined) ownerConfigStore.smtpUser = smtpUser;
   if (emailFrom !== undefined) ownerConfigStore.emailFrom = emailFrom;
-  if (intaSendPublishableKey !== undefined) ownerConfigStore.intaSendPublishableKey = intaSendPublishableKey;
+  if (lipiaApiKey !== undefined) ownerConfigStore.lipiaApiKey = lipiaApiKey;
 
   logActivity(req.userId, 'Owner Configuration Update', 'Updated platform configuration, gateway, and security settings.', req);
   res.json({ message: 'Owner platform configuration updated successfully.', config: ownerConfigStore });

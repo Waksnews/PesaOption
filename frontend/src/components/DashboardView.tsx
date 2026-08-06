@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, logAuth } from '../context/AppContext';
 import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { useWalletStore } from '../stores/walletStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -55,6 +55,11 @@ export const DashboardView: React.FC = () => {
 
   // Activate SSE connection for live prices and settlement logic
   useSSE();
+
+  // Log navigation completion on dashboard mount
+  useEffect(() => {
+    logAuth('Navigation complete');
+  }, []);
 
   // Refresh user data periodically
   useEffect(() => {

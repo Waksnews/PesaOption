@@ -5,14 +5,13 @@
 
 import express from 'express';
 import { PaymentController } from '../controllers/payment.controller';
-import { webhookVerify } from '../middleware/webhookVerify';
 
 const router = express.Router();
 
 /**
- * POST /api/webhooks/intasend
- * Public Webhook Receiver protected by IntaSend signature verification
+ * Public Callback Endpoints for Lipia Payment Notifications
  */
-router.post('/intasend', webhookVerify, PaymentController.handleWebhook);
+router.post('/lipia', PaymentController.handleCallback);
+router.post('/lipia/callback', PaymentController.handleCallback);
 
 export default router;

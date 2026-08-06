@@ -187,6 +187,16 @@ export interface PaymentTransaction {
   creditedAmount?: number;
   failedReason?: string;
   failureCode?: string;
+
+  // Lipia Online transaction fields
+  lipiaTransactionReference?: string;
+  externalReference?: string;
+  merchantRequestId?: string;
+  checkoutRequestId?: string;
+  mpesaReceiptNumber?: string;
+  resultCode?: number | string;
+  resultDescription?: string;
+  metadata?: any;
 }
 
 export interface PlatformSettings {
@@ -233,7 +243,8 @@ export interface SystemHealth {
   databaseStatus: 'Healthy' | 'Degraded' | 'Offline';
   databaseSizeKb: number;
   smtpStatus: 'Configured' | 'Unconfigured' | 'Operational';
-  intaSendStatus: 'Configured' | 'Unconfigured' | 'Live Environment';
+  lipiaStatus: 'Configured' | 'Unconfigured' | 'Live Environment';
+  intaSendStatus?: 'Configured' | 'Unconfigured' | 'Live Environment';
   maintenanceMode: boolean;
   uptimeSeconds: number;
 }
@@ -244,7 +255,8 @@ export interface OwnerConfig {
   smtpPort: number;
   smtpUser: string;
   emailFrom: string;
-  intaSendPublishableKey: string;
+  lipiaApiKey?: string;
+  intaSendPublishableKey?: string;
 }
 
 

@@ -94,6 +94,13 @@ interface AppContextType {
   updateOwnerConfig: (config: Partial<OwnerConfig>) => Promise<boolean>;
 }
 
+export const logAuth = (message: string) => {
+  console.log('[AUTH]');
+  console.log(message);
+  console.log('[AUTH]\n' + message);
+  console.log('[AUTH] ' + message);
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const useApp = () => {
@@ -280,6 +287,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       try {
+        logAuth('Loading authenticated profile');
         // Authenticated user: Fetch profile and user portfolio data concurrently
         const [profile] = await Promise.all([
           callApi('/api/auth/me'),
@@ -288,6 +296,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (isMounted) {
           setUser(profile);
+          logAuth('Profile loaded');
           setLoading(false);
         }
       } catch (e) {
@@ -381,9 +390,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+
+      logAuth('Login successful');
+
       localStorage.setItem('cth_token', res.token);
       setToken(res.token);
-      setUser(res.user);
+      logAuth('Token stored');
+
+      logAuth('Loading authenticated profile');
+
+      let profile = res.user;
+      try {
+        profile = await callApi('/api/auth/me');
+      } catch (e) {
+        console.warn('Failed to fetch /api/auth/me after login:', e);
+      }
+
+      setUser(profile);
+      logAuth('Profile loaded');
+
+      refreshUserData().catch(err => console.error('Background portfolio load error:', err));
+
       return true;
     } catch (e: any) {
       setError(e.message || 'Login failed');
@@ -398,9 +425,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         method: 'POST',
         body: JSON.stringify({ email, password, fullName, referralCode })
       });
+
+      logAuth('Login successful');
+
       localStorage.setItem('cth_token', res.token);
       setToken(res.token);
-      setUser(res.user);
+      logAuth('Token stored');
+
+      logAuth('Loading authenticated profile');
+
+      let profile = res.user;
+      try {
+        profile = await callApi('/api/auth/me');
+      } catch (e) {
+        console.warn('Failed to fetch /api/auth/me after register:', e);
+      }
+
+      setUser(profile);
+      logAuth('Profile loaded');
+
+      refreshUserData().catch(err => console.error('Background portfolio load error:', err));
+
       return true;
     } catch (e: any) {
       setError(e.message || 'Registration failed');

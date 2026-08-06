@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider, useApp, logAuth } from './context/AppContext';
 import { LandingView } from './components/LandingView';
 import { AuthView } from './components/AuthView';
 import { DashboardView } from './components/DashboardView';
@@ -18,6 +18,17 @@ import { RefreshCw } from 'lucide-react';
 const InnerRouter: React.FC = () => {
   const { user, loading } = useApp();
   const [screen, setScreen] = useState<string>('landing');
+
+  // Route Guard: Redirect authenticated users away from guest pages (login, register, landing)
+  useEffect(() => {
+    if (user && (screen === 'login' || screen === 'register' || screen === 'landing')) {
+      logAuth('Redirecting to dashboard');
+      setScreen('dashboard');
+      if (window.location.hash.includes('login') || window.location.hash.includes('register') || window.location.hash.includes('landing')) {
+        window.location.hash = '#dashboard';
+      }
+    }
+  }, [user, screen]);
 
   // Helper to determine route from window.location.hash or window.location.pathname
   const getActiveRouteFromUrl = () => {
@@ -114,8 +125,8 @@ const InnerRouter: React.FC = () => {
   if (screen === 'kyc') return <PolicyPage type="kyc" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
   if (screen === 'cookie') return <PolicyPage type="cookie" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
 
-  // If user is authenticated and on standard screen, route to dashboard
-  if (user && screen !== 'login' && screen !== 'register') {
+  // If user is authenticated, route to trading dashboard
+  if (user) {
     return <DashboardView />;
   }
 
