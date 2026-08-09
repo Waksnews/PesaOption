@@ -1833,6 +1833,8 @@ const ownerConfigStore = {
   smtpPort: 587,
   smtpUser: 'notifications@pesaoption.com',
   emailFrom: 'PesaOption System <no-reply@pesaoption.com>',
+  zetuPaySecretKey: process.env.ZETUPAY_SECRET_KEY || '',
+  zetuPayApiUrl: process.env.ZETUPAY_API_URL || 'https://pay.zetupay.co.ke/api/v1',
   lipiaApiKey: process.env.LIPIA_API_KEY || ''
 };
 
@@ -1869,8 +1871,8 @@ app.get('/api/owner/system-health', authenticate, requireOwner, (req, res) => {
     databaseStatus: 'Healthy',
     databaseSizeKb: dbSizeKb,
     smtpStatus: ownerConfigStore.smtpHost ? 'Configured' : 'Unconfigured',
+    zetuPayStatus: (process.env.ZETUPAY_SECRET_KEY || ownerConfigStore.zetuPaySecretKey) ? 'Configured' : 'Unconfigured',
     lipiaStatus: (process.env.LIPIA_API_KEY || ownerConfigStore.lipiaApiKey) ? 'Configured' : 'Unconfigured',
-    intaSendStatus: 'Configured',
     maintenanceMode: ownerConfigStore.maintenanceMode,
     uptimeSeconds: Math.floor(process.uptime())
   });

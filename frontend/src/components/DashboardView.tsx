@@ -24,6 +24,7 @@ import { ProfileView } from './views/ProfileView';
 import { SettingsView } from './views/SettingsView';
 import { HistoryView } from './views/HistoryView';
 import { AdminView } from './views/AdminView';
+import { DepositCallbackView } from './views/DepositCallbackView';
 
 // Import modals and utilities
 import { NavigationDrawer } from './NavigationDrawer';
@@ -331,6 +332,7 @@ export const DashboardView: React.FC = () => {
             <Route path="/" element={<TradingDeskView />} />
             <Route path="/scanner" element={<ScannerView />} />
             <Route path="/wallet" element={<WalletsView />} />
+            <Route path="/deposit/callback" element={<DepositCallbackView />} />
             <Route path="/referral" element={<ReferralView />} />
             <Route path="/support" element={<SupportView />} />
             <Route path="/security" element={<SecurityView />} />

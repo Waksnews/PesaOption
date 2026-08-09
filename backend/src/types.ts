@@ -188,7 +188,18 @@ export interface PaymentTransaction {
   failedReason?: string;
   failureCode?: string;
 
-  // Lipia Online transaction fields
+  // ZetuPay transaction fields
+  paymentKey?: string;
+  waveTransactionId?: string;
+  checkoutUrl?: string;
+  receiptNumber?: string;
+  grossAmount?: number;
+  providerFee?: number;
+  netAmount?: number;
+  environment?: string;
+  real?: boolean;
+
+  // Legacy fields
   lipiaTransactionReference?: string;
   externalReference?: string;
   merchantRequestId?: string;

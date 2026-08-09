@@ -9,9 +9,9 @@ import { authenticate } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
-// Lipia Deposit endpoints
+// Deposit endpoints
 router.post('/deposit', authenticate, PaymentController.createDeposit);
-router.post('/lipia/callback', PaymentController.handleCallback);
+router.get('/:reference/status', authenticate, PaymentController.getDepositByRef);
 router.get('/:reference', authenticate, PaymentController.getDepositByRef);
 
 export default router;

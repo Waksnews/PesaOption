@@ -4,8 +4,8 @@
  */
 
 import { Request, Response } from 'express';
-import { LipiaService } from '../services/lipia.service';
-import { isValidLipiaPhone } from '../utils/lipia';
+import { ZetuPayService } from '../services/zetupay.service';
+import { isValidZetuPayPhone } from '../utils/zetupay';
 import { Database } from '../../server/db';
 
 const pollCounters = new Map<string, { count: number; startTime: number }>();
@@ -13,7 +13,7 @@ const pollCounters = new Map<string, { count: number; startTime: number }>();
 export class PaymentController {
   /**
    * POST /api/payments/deposit
-   * Initiates STK push deposit via Lipia Online
+   * Initiates payment via ZetuPay
    */
   public static async createDeposit(req: any, res: Response) {
     const userId = req.userId;
@@ -55,44 +55,47 @@ export class PaymentController {
 
     const selectedMethod = paymentMethod || 'M-PESA';
 
-    if (!phone || !isValidLipiaPhone(phone)) {
+    if (!phone || !isValidZetuPayPhone(phone)) {
       return res.status(400).json({
         success: false,
-        error: 'Please enter a valid Safaricom phone number (e.g. 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX).',
+        error: 'Please enter a valid Kenyan Safaricom phone number (e.g. 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX).',
       });
     }
 
+    const domain = req.protocol + '://' + req.get('host');
+
     try {
-      const result = await LipiaService.createDeposit(
+      const result = await ZetuPayService.createDeposit({
         userId,
         email,
         phone,
-        numericAmount,
-        validCurrency,
-        selectedMethod
-      );
+        amount: numericAmount,
+        currency: validCurrency,
+        paymentMethod: selectedMethod,
+        domain
+      });
 
       return res.status(201).json({
         success: true,
-        message: 'Lipia deposit payment initiated successfully.',
+        message: 'ZetuPay deposit payment initiated successfully.',
         reference: result.reference,
-        externalReference: result.externalReference,
-        invoiceId: result.invoiceId,
-        customerMessage: result.customerMessage,
-        status: 'PENDING',
-        amount: numericAmount,
+        checkoutUrl: result.checkoutUrl,
+        paymentKey: result.paymentKey,
+        waveTransactionId: result.waveTransactionId,
+        status: result.status?.toUpperCase() || 'PENDING',
+        amount: result.amount,
         currency: validCurrency,
         phone: phone || '',
       });
     } catch (error: any) {
-      console.error('[LIPIA CONTROLLER] Deposit Initiation Error:', error.message);
-      return res.status(500).json({ success: false, error: error.message || 'Failed to initiate Lipia deposit.' });
+      console.error('[ZETUPAY CONTROLLER] Deposit Initiation Error:', error.message);
+      return res.status(500).json({ success: false, error: error.message || 'Failed to initiate ZetuPay deposit.' });
     }
   }
 
   /**
-   * GET /api/payments/:reference
-   * Payment polling endpoint returning normalized status
+   * GET /api/payments/:reference or GET /api/payments/:reference/status
+   * Payment polling/status endpoint returning normalized status
    */
   public static async getDepositByRef(req: any, res: Response) {
     const { reference } = req.params;
@@ -103,16 +106,16 @@ export class PaymentController {
     }
 
     try {
-      const paymentTx = await LipiaService.pollPaymentStatus(reference, userId);
+      const paymentTx = await ZetuPayService.checkPaymentStatus(reference, userId);
 
-      // Normalize status string: PENDING, SUCCESS, FAILED
+      // Normalize status string: PENDING, SUCCESS, FAILED, CANCELLED
       let normalizedStatus = 'PENDING';
       if (paymentTx.status === 'Completed') {
         normalizedStatus = 'SUCCESS';
       } else if (paymentTx.status === 'Failed') {
         normalizedStatus = 'FAILED';
       } else if (paymentTx.status === 'Cancelled') {
-        normalizedStatus = 'FAILED';
+        normalizedStatus = 'CANCELLED';
       } else if (paymentTx.status === 'Pending') {
         normalizedStatus = 'PENDING';
       }
@@ -126,18 +129,19 @@ export class PaymentController {
       }
       const elapsedSec = Math.round((Date.now() - pollInfo.startTime) / 1000);
 
-      console.log(`[POLL #${pollInfo.count}]`);
-      console.log(`Status:\n${normalizedStatus}`);
-      console.log(`Elapsed:\n${elapsedSec} sec`);
+      console.log(`[POLL #${pollInfo.count}] Reference: ${reference} Status: ${normalizedStatus} Elapsed: ${elapsedSec}s`);
 
-      if (['SUCCESS', 'FAILED'].includes(normalizedStatus)) {
+      if (['SUCCESS', 'FAILED', 'CANCELLED'].includes(normalizedStatus)) {
         pollCounters.delete(reference);
       }
 
       return res.json({
-        reference: paymentTx.reference || paymentTx.externalReference || paymentTx.invoiceId,
-        externalReference: paymentTx.externalReference || paymentTx.reference,
+        reference: paymentTx.reference || paymentTx.invoiceId,
         invoiceId: paymentTx.invoiceId,
+        paymentKey: paymentTx.paymentKey,
+        waveTransactionId: paymentTx.waveTransactionId,
+        checkoutUrl: paymentTx.checkoutUrl,
+        receiptNumber: paymentTx.receiptNumber,
         status: normalizedStatus,
         internalStatus: paymentTx.status,
         amount: paymentTx.amount,
@@ -146,34 +150,37 @@ export class PaymentController {
         paymentMethod: paymentTx.paymentMethod,
         provider: paymentTx.provider,
         failedReason: paymentTx.failedReason || (normalizedStatus === 'FAILED' ? 'Payment was not completed. Please try again.' : undefined),
-        resultCode: paymentTx.resultCode,
-        resultDescription: paymentTx.resultDescription,
-        mpesaReceiptNumber: paymentTx.mpesaReceiptNumber,
-        merchantRequestId: paymentTx.merchantRequestId,
-        checkoutRequestId: paymentTx.checkoutRequestId,
         createdAt: paymentTx.createdAt,
         updatedAt: paymentTx.updatedAt,
       });
     } catch (error: any) {
-      console.error('[LIPIA CONTROLLER] Polling Error:', error.message);
+      console.error('[ZETUPAY CONTROLLER] Polling Error:', error.message);
       return res.status(404).json({ error: error.message || 'Payment transaction not found.' });
     }
   }
 
   /**
-   * POST /api/payment/lipia/callback or POST /api/webhooks/lipia
-   * Handles Lipia payment callback
+   * POST /api/webhooks/zetupay
+   * Handles ZetuPay webhook callback
+   */
+  public static async handleWebhook(req: Request, res: Response) {
+    try {
+      console.log('[ZETUPAY CONTROLLER] Webhook Received:', JSON.stringify(req.body));
+      const result = await ZetuPayService.handleWebhook(req.headers, req.body);
+      return res.status(200).json(result);
+    } catch (error: any) {
+      console.error('[ZETUPAY CONTROLLER] Webhook Error:', error.message);
+      if (error.message && error.message.includes('Unauthorized')) {
+        return res.status(401).json({ success: false, error: error.message });
+      }
+      return res.status(200).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * Alias for webhook callback handler
    */
   public static async handleCallback(req: Request, res: Response) {
-    try {
-      console.log('[LIPIA CONTROLLER] Callback Received:', JSON.stringify(req.body));
-      await LipiaService.handleCallback(req.body);
-
-      // Always return HTTP 200 ok
-      return res.status(200).send('ok');
-    } catch (error: any) {
-      console.error('[LIPIA CONTROLLER] Callback Error:', error.message);
-      return res.status(200).send('ok');
-    }
+    return PaymentController.handleWebhook(req, res);
   }
 }

@@ -81,7 +81,7 @@ export const DepositModal: React.FC = () => {
     }
   }, [depositModalOpen]);
 
-  // Polling Engine: Checks Lipia payment status every 5 seconds for up to 120 seconds
+  // Polling Engine: Checks ZetuPay payment status every 5 seconds for up to 120 seconds
   useEffect(() => {
     let intervalId: any = null;
     let countdownId: any = null;
@@ -90,7 +90,7 @@ export const DepositModal: React.FC = () => {
 
     if (step === 'waiting' && invoiceId) {
       setSecondsRemaining(120);
-      setLiveStatusMessage('Waiting for PIN...');
+      setLiveStatusMessage('Waiting for PIN or Authorization...');
 
       countdownId = setInterval(() => {
         setSecondsRemaining(prev => Math.max(0, prev - 1));
@@ -100,7 +100,7 @@ export const DepositModal: React.FC = () => {
         try {
           secondsElapsed += 5;
 
-          const data = await callApi(`/api/payments/${invoiceId}`);
+          const data = await callApi(`/api/payments/${invoiceId}/status`);
 
           if (data.status === 'SUCCESS' || data.status === 'Completed') {
             setLiveStatusMessage('Payment confirmed');
@@ -113,7 +113,7 @@ export const DepositModal: React.FC = () => {
             setLiveStatusMessage('Payment failed');
             setErrorReason(data.failedReason || 'The payment transaction was declined or failed.');
             setStep('failed');
-            addToast('Deposit Failed', data.failedReason || 'Lipia payment failed.', 'error');
+            addToast('Deposit Failed', data.failedReason || 'ZetuPay payment failed.', 'error');
             if (intervalId) clearInterval(intervalId);
             if (countdownId) clearInterval(countdownId);
           } else if (data.status === 'CANCELLED' || data.status === 'Cancelled') {
@@ -131,7 +131,7 @@ export const DepositModal: React.FC = () => {
             if (countdownId) clearInterval(countdownId);
           }
         } catch (err: any) {
-          console.error('[LIPIA STATUS POLL ERROR]', err);
+          console.error('[ZETUPAY STATUS POLL ERROR]', err);
         }
 
         // Timeout fallback after 120 seconds
@@ -182,7 +182,7 @@ export const DepositModal: React.FC = () => {
   const isAmountBelowMin = amountNum > 0 && amountNum < minRequired;
   const isAmountValid = amountNum >= minRequired;
   
-  // Lipia charge is processed in KES
+  // ZetuPay charge is processed in KES
   const rate = getUsdKesRate();
   const stkAmountInKes = isKes ? amountNum : Math.round(amountNum * rate);
   const creditedAmountInUsd = isKes ? (rate > 0 ? amountNum / rate : 0) : amountNum;
@@ -208,7 +208,7 @@ export const DepositModal: React.FC = () => {
     setCheckoutUrl(null);
 
     try {
-      // Call Lipia Online deposit endpoint
+      // Call ZetuPay deposit endpoint
       const response = await callApi('/api/payments/deposit', {
         method: 'POST',
         body: JSON.stringify({
@@ -220,18 +220,27 @@ export const DepositModal: React.FC = () => {
         }),
       });
 
-      const refOrInvoice = response.reference || response.externalReference || response.invoiceId;
+      const refOrInvoice = response.reference || response.invoiceId;
       setInvoiceId(refOrInvoice);
       if (response.checkoutUrl || response.url) {
         setCheckoutUrl(response.checkoutUrl || response.url);
       }
 
       setStep('waiting');
+
+      // If ZetuPay returns a checkout URL, redirect user to checkout
+      if (response.checkoutUrl || response.url) {
+        const destUrl = response.checkoutUrl || response.url;
+        console.log('[ZETUPAY] Redirecting to checkout:', destUrl);
+        setTimeout(() => {
+          window.location.href = destUrl;
+        }, 1200);
+      }
     } catch (error: any) {
-      console.error('[LIPIA DEPOSIT INIT ERROR]', error);
-      setErrorReason(error.message || 'Failed to initiate Lipia payment.');
+      console.error('[ZETUPAY DEPOSIT INIT ERROR]', error);
+      setErrorReason(error.message || 'Failed to initiate ZetuPay payment.');
       setStep('failed');
-      addToast('Request Rejected', error.message || 'Lipia payment request rejected.', 'error');
+      addToast('Request Rejected', error.message || 'ZetuPay payment request rejected.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -260,7 +269,7 @@ export const DepositModal: React.FC = () => {
         <div className="p-4 sm:p-5 border-b border-slate-850 flex justify-between items-center bg-slate-950/30 flex-shrink-0">
           <span className="text-xs font-bold text-slate-100 uppercase tracking-widest flex items-center space-x-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Lipia Online Payment Gateway</span>
+            <span>ZetuPay Gateway</span>
           </span>
           <button 
             onClick={handleClose} 
@@ -327,11 +336,11 @@ export const DepositModal: React.FC = () => {
                   {paymentMethod === 'M-PESA' ? <Smartphone className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-200">Lipia Online Gateway</h4>
+                  <h4 className="text-xs font-bold text-slate-200">ZetuPay Gateway</h4>
                   <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
                     {paymentMethod === 'M-PESA'
-                      ? 'Instant M-PESA STK Push payment prompt sent directly to your phone handset.'
-                      : 'Secure processing via Lipia Online Payment Gateway.'}
+                      ? 'Secure M-PESA payment prompt via ZetuPay gateway.'
+                      : 'Secure checkout processing via ZetuPay payment gateway.'}
                   </p>
                 </div>
               </div>
@@ -403,7 +412,7 @@ export const DepositModal: React.FC = () => {
                 {amountNum >= minRequired && (
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-1.5 text-[10px] font-mono mt-1">
                     <div className="flex justify-between text-slate-400">
-                      <span>Lipia KES Charge:</span>
+                      <span>ZetuPay KES Charge:</span>
                       <span className="font-bold text-emerald-400">KES {stkAmountInKes.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-slate-450">
@@ -425,7 +434,7 @@ export const DepositModal: React.FC = () => {
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Communicating with Lipia Online...</span>
+                    <span>Connecting to ZetuPay...</span>
                   </>
                 ) : (
                   <>
@@ -495,11 +504,11 @@ export const DepositModal: React.FC = () => {
                     {checkoutUrl && (
                       <a 
                         href={checkoutUrl} 
-                        target="_blank" 
+                        target="_self" 
                         rel="noopener noreferrer"
-                        className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl mt-2 transition"
+                        className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl mt-2 transition shadow-md"
                       >
-                        <span>Open Lipia Checkout</span>
+                        <span>Open ZetuPay Checkout</span>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
@@ -559,7 +568,7 @@ export const DepositModal: React.FC = () => {
                   </div>
                   <div className="flex justify-between border-t border-slate-900/50 pt-1.5">
                     <span className="text-slate-550">Payment Provider:</span>
-                    <span className="text-slate-400 font-bold">Lipia Online ({paymentMethod})</span>
+                    <span className="text-slate-400 font-bold">ZetuPay ({paymentMethod})</span>
                   </div>
                 </div>
               </div>

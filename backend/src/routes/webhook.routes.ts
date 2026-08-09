@@ -9,8 +9,9 @@ import { PaymentController } from '../controllers/payment.controller';
 const router = express.Router();
 
 /**
- * Public Callback Endpoints for Lipia Payment Notifications
+ * Public Webhook Endpoints
  */
+router.post('/zetupay', PaymentController.handleCallback);
 router.post('/lipia', PaymentController.handleCallback);
 router.post('/lipia/callback', PaymentController.handleCallback);
 
