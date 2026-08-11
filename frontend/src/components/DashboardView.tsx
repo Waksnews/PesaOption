@@ -59,10 +59,19 @@ export const DashboardView: React.FC = () => {
   // Activate SSE connection for live prices and settlement logic
   useSSE();
 
-  // Log navigation completion on dashboard mount
+  // Log navigation completion on dashboard mount and sync deposit callback path if needed
   useEffect(() => {
     logAuth('Navigation complete');
-  }, []);
+
+    const winPath = window.location.pathname.toLowerCase();
+    const winSearch = window.location.search;
+
+    if (winPath.includes('/deposit/callback') || winSearch.includes('reference=') || winSearch.includes('ref=')) {
+      if (!location.pathname.includes('/deposit/callback')) {
+        navigate(`/deposit/callback${winSearch}`, { replace: true });
+      }
+    }
+  }, [location.pathname, navigate]);
 
   // Refresh user data periodically
   useEffect(() => {

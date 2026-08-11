@@ -217,6 +217,7 @@ export const DepositModal: React.FC = () => {
           currency: 'KES',
           email: email || user?.email || 'trader@pesaoption.com',
           paymentMethod,
+          domain: window.location.origin,
         }),
       });
 

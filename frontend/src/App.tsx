@@ -34,6 +34,11 @@ const InnerRouter: React.FC = () => {
   const getActiveRouteFromUrl = () => {
     const hash = window.location.hash.toLowerCase();
     const path = window.location.pathname.toLowerCase();
+    const search = window.location.search.toLowerCase();
+
+    if (hash.includes('deposit/callback') || path.includes('/deposit/callback') || search.includes('reference=') || search.includes('ref=')) {
+      return 'dashboard';
+    }
 
     if (hash.includes('about') || path.includes('/about')) return 'about';
     if (hash.includes('contact') || path.includes('/contact')) return 'contact';

@@ -292,22 +292,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       try {
         logAuth('Loading authenticated profile');
-        // Authenticated user: Fetch profile and user portfolio data concurrently
-        const [profile] = await Promise.all([
-          callApi('/api/auth/me'),
-          refreshUserData().catch(err => console.error('Background portfolio load error:', err))
-        ]);
+        const profile = await callApi('/api/auth/me');
 
         if (isMounted) {
           setUser(profile);
           logAuth('Profile loaded');
           setLoading(false);
         }
-      } catch (e) {
-        console.error('Invalid token, logging out', e);
-        if (isMounted) {
-          logout();
-          setLoading(false);
+
+        refreshUserData().catch(err => console.error('Background portfolio load error:', err));
+      } catch (e: any) {
+        console.error('Error verifying profile session:', e);
+        const errStr = e?.message?.toLowerCase() || '';
+        const isUnauthorized = errStr.includes('401') || errStr.includes('unauthorized') || errStr.includes('session expired');
+        if (isUnauthorized) {
+          if (isMounted) {
+            logout();
+            setLoading(false);
+          }
+        } else {
+          // Keep token intact if it was a temporary network glitch or server cold start during redirect
+          if (isMounted) {
+            setLoading(false);
+          }
         }
       }
 

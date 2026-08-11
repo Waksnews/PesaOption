@@ -62,7 +62,20 @@ export class PaymentController {
       });
     }
 
-    const domain = req.protocol + '://' + req.get('host');
+    let callerOrigin = req.body?.domain;
+    if (!callerOrigin && req.headers.origin) {
+      callerOrigin = req.headers.origin;
+    }
+    if (!callerOrigin && req.headers.referer) {
+      try {
+        callerOrigin = new URL(req.headers.referer as string).origin;
+      } catch {
+        // invalid referer url
+      }
+    }
+    if (!callerOrigin) {
+      callerOrigin = req.protocol + '://' + req.get('host');
+    }
 
     try {
       const result = await ZetuPayService.createDeposit({
@@ -72,7 +85,7 @@ export class PaymentController {
         amount: numericAmount,
         currency: validCurrency,
         paymentMethod: selectedMethod,
-        domain
+        domain: callerOrigin
       });
 
       return res.status(201).json({

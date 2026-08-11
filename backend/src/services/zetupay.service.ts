@@ -25,11 +25,9 @@ export class ZetuPayService {
   }
 
   private static getRedirectUrl(domain?: string): string {
-    if (process.env.ZETUPAY_REDIRECT_URL) {
-      return process.env.ZETUPAY_REDIRECT_URL;
-    }
-    const base = domain || process.env.APP_URL || 'http://localhost:3000';
-    return `${base.replace(/\/$/, '')}/#wallet`;
+    const base = domain || process.env.FRONTEND_URL || process.env.APP_URL || (process.env.ZETUPAY_REDIRECT_URL ? new URL(process.env.ZETUPAY_REDIRECT_URL).origin : null) || 'http://localhost:3000';
+    const cleanBase = base.replace(/\/$/, '');
+    return `${cleanBase}/deposit/callback`;
   }
 
   /**
