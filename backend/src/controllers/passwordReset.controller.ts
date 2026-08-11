@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import { Database, hashPassword } from '../../server/db';
+import { Database, getPrismaClient, hashPassword } from '../../server/db';
 import { generateRandomToken, hashToken, validatePasswordStrength } from '../utils/token';
 import { EmailService } from '../services/email.service';
 import { SMSService } from '../services/sms.service';
@@ -25,19 +25,47 @@ export class PasswordResetController {
     }
 
     try {
-      const db = Database.getInstance();
       const normalizedEmail = email.trim().toLowerCase();
-      const user = db.users.find(u => u.email.toLowerCase() === normalizedEmail);
+      const prisma = getPrismaClient();
+
+      let user: any = null;
+
+      if (prisma) {
+        user = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+        });
+      }
+
+      if (!user) {
+        const db = Database.getInstance();
+        user = db.users.find(u => u.email.toLowerCase() === normalizedEmail);
+      }
 
       if (user) {
         // Generate secure 32-byte raw token
         const rawToken = generateRandomToken(32);
         const hashedToken = hashToken(rawToken);
+        const expiresDate = new Date(Date.now() + 15 * 60 * 1000);
 
-        // Store hashed token and 15-minute expiration time
-        user.passwordResetToken = hashedToken;
-        user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-        db.save();
+        if (prisma) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              passwordResetToken: hashedToken,
+              passwordResetExpires: expiresDate
+            }
+          });
+          console.log(`[AUTH] Password reset token persisted to PostgreSQL for user ID: ${user.id}`);
+        }
+
+        // Also update in-memory user object for compatibility
+        const db = Database.getInstance();
+        const inMemUser = db.users.find(u => u.id === user.id);
+        if (inMemUser) {
+          inMemUser.passwordResetToken = hashedToken;
+          inMemUser.passwordResetExpires = expiresDate.toISOString();
+          db.save();
+        }
 
         // Construct reset link using FRONTEND_URL or APP_URL
         const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
@@ -79,9 +107,21 @@ export class PasswordResetController {
     }
 
     try {
-      const db = Database.getInstance();
       const hashedToken = hashToken(token);
-      const user = db.users.find(u => u.passwordResetToken === hashedToken);
+      const prisma = getPrismaClient();
+
+      let user: any = null;
+
+      if (prisma) {
+        user = await prisma.user.findFirst({
+          where: { passwordResetToken: hashedToken }
+        });
+      }
+
+      if (!user) {
+        const db = Database.getInstance();
+        user = db.users.find(u => u.passwordResetToken === hashedToken);
+      }
 
       if (!user || !user.passwordResetExpires) {
         return res.status(400).json({ valid: false, error: 'Password reset link is invalid or has already been used.' });
@@ -124,9 +164,21 @@ export class PasswordResetController {
     }
 
     try {
-      const db = Database.getInstance();
       const hashedToken = hashToken(token);
-      const user = db.users.find(u => u.passwordResetToken === hashedToken);
+      const prisma = getPrismaClient();
+
+      let user: any = null;
+
+      if (prisma) {
+        user = await prisma.user.findFirst({
+          where: { passwordResetToken: hashedToken }
+        });
+      }
+
+      if (!user) {
+        const db = Database.getInstance();
+        user = db.users.find(u => u.passwordResetToken === hashedToken);
+      }
 
       if (!user || !user.passwordResetExpires) {
         return res.status(400).json({ error: 'Invalid or expired password reset token.' });
@@ -137,20 +189,32 @@ export class PasswordResetController {
         return res.status(400).json({ error: 'Password reset token has expired.' });
       }
 
-      // 1. Update password hash
-      user.passwordHash = hashPassword(password);
+      const newPasswordHash = hashPassword(password);
+      const passwordChangedAt = new Date();
 
-      // 2. Invalidate reset token immediately (single-use)
-      delete user.passwordResetToken;
-      delete user.passwordResetExpires;
+      if (prisma) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash: newPasswordHash,
+            passwordResetToken: null,
+            passwordResetExpires: null,
+            passwordChangedAt: passwordChangedAt
+          }
+        });
+        console.log(`[AUTH] Password reset persisted to PostgreSQL`);
+      }
 
-      // 3. Invalidate all active JWT sessions
-      user.passwordChangedAt = new Date().toISOString();
-
-      // 4. Commit changes
-      db.save();
-
-      console.log(`[PASSWORD RESET CONTROLLER] Password successfully reset for user: ${user.email}`);
+      // Invalidate in-memory user cache single-use token and update passwordHash
+      const db = Database.getInstance();
+      const inMemUser = db.users.find(u => u.id === user.id);
+      if (inMemUser) {
+        inMemUser.passwordHash = newPasswordHash;
+        delete inMemUser.passwordResetToken;
+        delete inMemUser.passwordResetExpires;
+        inMemUser.passwordChangedAt = passwordChangedAt.toISOString();
+        db.save();
+      }
 
       return res.json({
         message: 'Password updated successfully. Please log in with your new credentials.',

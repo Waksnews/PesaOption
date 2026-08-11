@@ -12,7 +12,7 @@ interface PageProps {
   onEnterApp: (mode: 'login' | 'register') => void;
 }
 
-const BASE_URL = "https://pesaoption.site";
+const BASE_URL = "https://www.pesaoption.site";
 
 // ----------------------------------------------------------------------------
 // 1. ABOUT PAGE

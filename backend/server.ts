@@ -6,7 +6,7 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
-import { Database, hashPassword } from './server/db';
+import { Database, getPrismaClient, hashPassword } from './server/db';
 import { 
   User, UserRole, Wallet, Transaction, TransactionType, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog, MarketPrice,
@@ -71,7 +71,7 @@ Disallow: /dashboard
 Disallow: /api
 Disallow: /deposit/callback
 
-Sitemap: https://pesaoption.site/sitemap.xml`);
+Sitemap: https://www.pesaoption.site/sitemap.xml`);
 });
 
 // Serving sitemap.xml for Search Engines
@@ -84,19 +84,19 @@ app.get('/sitemap.xml', (req, res) => {
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <url>
-    <loc>https://pesaoption.site/</loc>
+    <loc>https://www.pesaoption.site/</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://pesaoption.site/login</loc>
+    <loc>https://www.pesaoption.site/login</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pesaoption.site/register</loc>
+    <loc>https://www.pesaoption.site/register</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -402,16 +402,33 @@ app.get('/api/realtime', (req, res) => {
 });
 
 // Auth Routes
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { email, password, fullName, referralCode, phoneNumber, phone } = req.body;
   
   if (!email || !password || !fullName) {
     return res.status(400).json({ error: 'All fields (email, password, fullName) are required.' });
   }
 
-  const existing = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (existing) {
-    return res.status(400).json({ error: 'Email already registered.' });
+  const normalizedEmail = email.trim().toLowerCase();
+  const prisma = getPrismaClient();
+
+  if (prisma) {
+    try {
+      const dbUser = await prisma.user.findFirst({
+        where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+      });
+      if (dbUser) {
+        return res.status(400).json({ error: 'Email already registered.' });
+      }
+    } catch (err) {
+      console.error('[AUTH] Registration email check error:', err);
+      return res.status(500).json({ error: 'Database connection error during registration.' });
+    }
+  } else {
+    const existing = db.users.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      return res.status(400).json({ error: 'Email already registered.' });
+    }
   }
 
   const userId = 'u_' + Math.random().toString(36).substr(2, 9);
@@ -420,18 +437,24 @@ app.post('/api/auth/register', (req, res) => {
   // Verify referrer if code provided
   let referredByCode: string | undefined;
   if (referralCode) {
-    const referrer = db.users.find(u => u.referralCode === referralCode);
+    let referrer: any = null;
+    if (prisma) {
+      referrer = await prisma.user.findFirst({ where: { referralCode } }).catch(() => null);
+    }
+    if (!referrer) {
+      referrer = db.users.find(u => u.referralCode === referralCode);
+    }
     if (referrer) {
       referredByCode = referralCode;
     }
   }
 
-  const isOwnerEmail = email.toLowerCase() === 'bonayafatuma58@gmail.com';
+  const isOwnerEmail = normalizedEmail === 'bonayafatuma58@gmail.com';
   const assignedRole: UserRole = isOwnerEmail ? 'owner' : 'user';
 
   const newUser: User = {
     id: userId,
-    email: email.toLowerCase(),
+    email: normalizedEmail,
     passwordHash: hashPassword(password),
     fullName,
     role: assignedRole,
@@ -442,6 +465,29 @@ app.post('/api/auth/register', (req, res) => {
     avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`,
     createdAt: new Date().toISOString()
   };
+
+  if (prisma) {
+    try {
+      await prisma.user.create({
+        data: {
+          id: userId,
+          email: newUser.email,
+          passwordHash: newUser.passwordHash,
+          fullName: newUser.fullName,
+          role: assignedRole,
+          phoneNumber: newUser.phoneNumber || null,
+          referralCode: newUser.referralCode || null,
+          referredBy: newUser.referredBy || null,
+          avatarUrl: newUser.avatarUrl || null,
+          verified: true
+        }
+      });
+      console.log(`[AUTH] User registration persisted to PostgreSQL: ${newUser.email}`);
+    } catch (err) {
+      console.error('[AUTH] Registration PostgreSQL save error:', err);
+      return res.status(500).json({ error: 'Failed to persist new user to database.' });
+    }
+  }
 
   db.users.push(newUser);
 
@@ -456,12 +502,11 @@ app.post('/api/auth/register', (req, res) => {
   if (referredByCode) {
     const referrerUser = db.users.find(u => u.referralCode === referredByCode);
     if (referrerUser) {
-      // Credit referrer and user with sandbox bonus (capped at $5,000 max)
       const refUsdWallet = db.wallets.find(w => w.userId === referrerUser.id && w.asset === 'USD');
       const myUsdWallet = db.wallets.find(w => w.userId === userId && w.asset === 'USD');
       
       if (refUsdWallet) refUsdWallet.demoBalance = Math.min(5000, refUsdWallet.demoBalance + 500);
-      if (myUsdWallet) myUsdWallet.demoBalance = Math.min(5000, myUsdWallet.demoBalance + 100); // user gets $100 referral starter
+      if (myUsdWallet) myUsdWallet.demoBalance = Math.min(5000, myUsdWallet.demoBalance + 100);
 
       db.referralEarnings.push({
         id: 'ref_earn_' + Math.random().toString(36).substr(2, 9),
@@ -497,25 +542,89 @@ app.post('/api/auth/register', (req, res) => {
   res.status(201).json({ token, user: { id: userId, email: newUser.email, fullName: newUser.fullName, role: assignedRole, phoneNumber: newUser.phoneNumber, referralCode: myRefCode, avatarUrl: newUser.avatarUrl } });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
-  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || user.passwordHash !== hashPassword(password)) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const prisma = getPrismaClient();
+
+  let user: User | null = null;
+
+  if (prisma) {
+    try {
+      const dbUser = await prisma.user.findFirst({
+        where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+      });
+      if (dbUser) {
+        user = {
+          id: dbUser.id,
+          email: dbUser.email,
+          passwordHash: dbUser.passwordHash,
+          fullName: dbUser.fullName,
+          role: dbUser.role as UserRole,
+          phoneNumber: dbUser.phoneNumber || undefined,
+          referralCode: dbUser.referralCode || undefined,
+          referredBy: dbUser.referredBy || undefined,
+          avatarUrl: dbUser.avatarUrl || undefined,
+          passwordResetToken: dbUser.passwordResetToken || undefined,
+          passwordResetExpires: dbUser.passwordResetExpires ? dbUser.passwordResetExpires.toISOString() : undefined,
+          passwordChangedAt: dbUser.passwordChangedAt ? dbUser.passwordChangedAt.toISOString() : undefined,
+          createdAt: dbUser.createdAt.toISOString(),
+          updatedAt: dbUser.updatedAt.toISOString(),
+        };
+        console.log(`[AUTH] Login user lookup: found`);
+      } else {
+        console.log(`[AUTH] Login user lookup: not found`);
+      }
+    } catch (err) {
+      console.error('[AUTH] PostgreSQL user lookup error during login:', err);
+      return res.status(500).json({ error: 'Authentication service temporarily unavailable. Please try again.' });
+    }
+  } else {
+    const found = db.users.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (found) user = found;
+    console.log(`[AUTH] Login user lookup: ${user ? 'found' : 'not found'}`);
+  }
+
+  if (!user) {
     return res.status(401).json({ error: 'Invalid email or password.' });
   }
 
+  if (user.passwordHash !== hashPassword(password)) {
+    console.log(`[AUTH] Password verification: failure`);
+    return res.status(401).json({ error: 'Invalid email or password.' });
+  }
+
+  console.log(`[AUTH] Password verification: success`);
+
   // Auto-promotion for owner email
-  if (user.email.toLowerCase() === 'bonayafatuma58@gmail.com' && user.role !== 'owner') {
+  if (normalizedEmail === 'bonayafatuma58@gmail.com' && user.role !== 'owner') {
     user.role = 'owner';
-    db.save();
+    if (prisma) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role: 'owner' }
+      }).catch(err => console.error('[AUTH] Error promoting owner in PostgreSQL:', err));
+    }
+    const inMemUser = db.users.find(u => u.id === user!.id);
+    if (inMemUser) {
+      inMemUser.role = 'owner';
+      db.save();
+    }
     console.log('[AUTH] Promoted bonayafatuma58@gmail.com to owner role on login.');
   }
 
-  console.log('[AUTH] Login success');
+  // Update in-memory db.users cache for backward compatibility
+  const existingIdx = db.users.findIndex(u => u.id === user!.id);
+  if (existingIdx !== -1) {
+    db.users[existingIdx] = { ...db.users[existingIdx], ...user };
+  } else {
+    db.users.push(user);
+  }
+
   const token = generateSessionToken(user.id, user.role);
   logActivity(user.id, 'User Login', 'Successfully authenticated and session established.', req);
 
@@ -533,8 +642,19 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-app.get('/api/auth/me', authenticate, (req: any, res) => {
-  const user = db.users.find(u => u.id === req.userId);
+app.get('/api/auth/me', authenticate, async (req: any, res) => {
+  const prisma = getPrismaClient();
+  let user: any = null;
+  if (prisma) {
+    try {
+      user = await prisma.user.findUnique({ where: { id: req.userId } });
+    } catch (err) {
+      console.error('[AUTH] /api/auth/me Prisma lookup error:', err);
+    }
+  }
+  if (!user) {
+    user = db.users.find(u => u.id === req.userId);
+  }
   if (!user) {
     return res.status(404).json({ error: 'User profile not found.' });
   }
@@ -550,31 +670,102 @@ app.get('/api/auth/me', authenticate, (req: any, res) => {
   });
 });
 
-app.put('/api/auth/update-profile', authenticate, (req: any, res) => {
+app.put('/api/auth/update-profile', authenticate, async (req: any, res) => {
   const { fullName, avatarUrl, phoneNumber, phone } = req.body;
-  const user = db.users.find(u => u.id === req.userId);
+  const prisma = getPrismaClient();
+  let user: any = null;
+
+  if (prisma) {
+    try {
+      user = await prisma.user.findUnique({ where: { id: req.userId } });
+    } catch (err) {
+      console.error('[AUTH] update-profile Prisma error:', err);
+    }
+  }
+  if (!user) {
+    user = db.users.find(u => u.id === req.userId);
+  }
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
-  if (fullName) user.fullName = fullName;
-  if (avatarUrl) user.avatarUrl = avatarUrl;
-  if (phoneNumber || phone) user.phoneNumber = phoneNumber || phone;
-  
-  db.save();
-  logActivity(user.id, 'Update Profile', 'Profile details updated.', req);
-  res.json({ message: 'Profile updated successfully', user });
+  const updatedName = fullName || user.fullName;
+  const updatedAvatar = avatarUrl || user.avatarUrl;
+  const updatedPhone = phoneNumber || phone || user.phoneNumber;
+
+  if (prisma) {
+    try {
+      await prisma.user.update({
+        where: { id: req.userId },
+        data: {
+          fullName: updatedName,
+          avatarUrl: updatedAvatar,
+          phoneNumber: updatedPhone
+        }
+      });
+    } catch (err) {
+      console.error('[AUTH] Update profile PostgreSQL error:', err);
+    }
+  }
+
+  const inMemUser = db.users.find(u => u.id === req.userId);
+  if (inMemUser) {
+    if (fullName) inMemUser.fullName = fullName;
+    if (avatarUrl) inMemUser.avatarUrl = avatarUrl;
+    if (phoneNumber || phone) inMemUser.phoneNumber = phoneNumber || phone;
+    db.save();
+  }
+
+  logActivity(req.userId, 'Update Profile', 'Profile details updated.', req);
+  res.json({ message: 'Profile updated successfully', user: { ...user, fullName: updatedName, avatarUrl: updatedAvatar, phoneNumber: updatedPhone } });
 });
 
-app.put('/api/auth/change-password', authenticate, (req: any, res) => {
+app.put('/api/auth/change-password', authenticate, async (req: any, res) => {
   const { currentPassword, newPassword } = req.body;
-  const user = db.users.find(u => u.id === req.userId);
+  const prisma = getPrismaClient();
+  let user: any = null;
+
+  if (prisma) {
+    try {
+      user = await prisma.user.findUnique({ where: { id: req.userId } });
+    } catch (err) {
+      console.error('[AUTH] change-password Prisma error:', err);
+      return res.status(500).json({ error: 'Database connection error. Please try again.' });
+    }
+  }
+  if (!user) {
+    user = db.users.find(u => u.id === req.userId);
+  }
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
   if (user.passwordHash !== hashPassword(currentPassword)) {
     return res.status(400).json({ error: 'Incorrect current password.' });
   }
 
-  user.passwordHash = hashPassword(newPassword);
-  db.save();
+  const newHash = hashPassword(newPassword);
+  const passwordChangedAt = new Date();
+
+  if (prisma) {
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newHash,
+          passwordChangedAt: passwordChangedAt
+        }
+      });
+      console.log(`[AUTH] Password reset persisted to PostgreSQL`);
+    } catch (err) {
+      console.error('[AUTH] Change password PostgreSQL update error:', err);
+      return res.status(500).json({ error: 'Failed to update password in database.' });
+    }
+  }
+
+  const inMemUser = db.users.find(u => u.id === user.id);
+  if (inMemUser) {
+    inMemUser.passwordHash = newHash;
+    inMemUser.passwordChangedAt = passwordChangedAt.toISOString();
+    db.save();
+  }
+
   logActivity(user.id, 'Change Password', 'Password updated successfully.', req);
   res.json({ message: 'Password changed successfully.' });
 });
@@ -1882,8 +2073,10 @@ app.get('/', (req, res, next) => {
 // ============================================================================
 async function startServer() {
   // Ensure Database initialization completes before listening
+  console.log('[SERVER] Initializing Database & PostgreSQL connection...');
   try {
     await Database.getInstance().init();
+    console.log('[SERVER] Database initialization complete.');
   } catch (err) {
     console.warn('[SERVER] Database init warning:', err);
   }

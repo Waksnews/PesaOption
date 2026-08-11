@@ -6,7 +6,7 @@
 
   <!-- Home Page -->
   <url>
-    <loc>https://pesaoption.site/</loc>
+    <loc>https://www.pesaoption.site/</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
@@ -14,7 +14,7 @@
 
   <!-- Login Page -->
   <url>
-    <loc>https://pesaoption.site/login</loc>
+    <loc>https://www.pesaoption.site/login</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -22,7 +22,7 @@
 
   <!-- Register Page -->
   <url>
-    <loc>https://pesaoption.site/register</loc>
+    <loc>https://www.pesaoption.site/register</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>

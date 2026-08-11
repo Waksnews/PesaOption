@@ -10,7 +10,7 @@ export interface SEOProps {
 }
 
 const DEFAULT_KEYWORDS = "Forex Trading Kenya, Crypto Trading Kenya, Binary Options Trading, M-PESA Trading Platform, Online Trading Kenya, Demo Trading Account, Live Trading Platform, PesaOption";
-const BASE_URL = "https://pesaoption.site";
+const BASE_URL = "https://www.pesaoption.site";
 
 export const SEO: React.FC<SEOProps> = ({
   title,
