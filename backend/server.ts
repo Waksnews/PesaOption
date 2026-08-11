@@ -69,10 +69,9 @@ Allow: /
 Disallow: /admin
 Disallow: /dashboard
 Disallow: /api
-Disallow: /login
-Disallow: /register
+Disallow: /deposit/callback
 
-Sitemap: https://pesaoption.site.je/sitemap.xml`);
+Sitemap: https://pesaoption.site/sitemap.xml`);
 });
 
 // Serving sitemap.xml for Search Engines
@@ -85,76 +84,22 @@ app.get('/sitemap.xml', (req, res) => {
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <url>
-    <loc>https://pesaoption.site.je/</loc>
-    <lastmod>2026-08-02</lastmod>
+    <loc>https://pesaoption.site/</loc>
+    <lastmod>2026-08-11</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://pesaoption.site.je/#about</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://pesaoption.site/login</loc>
+    <lastmod>2026-08-11</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pesaoption.site.je/#contact</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://pesaoption.site/register</loc>
+    <lastmod>2026-08-11</lastmod>
+    <changefreq>monthly</changefreq>
     <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#faq</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#how-to-deposit</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#how-to-withdraw</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#privacy-policy</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#terms-of-service</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#risk-disclosure</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#aml-policy</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#kyc-policy</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-  </url>
-  <url>
-    <loc>https://pesaoption.site.je/#cookie-policy</loc>
-    <lastmod>2026-08-02</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
   </url>
 </urlset>`);
 });

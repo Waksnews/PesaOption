@@ -81,7 +81,7 @@ export const LandingView: React.FC<{
     setMetaTag("og:title", "PesaOption | Real Binary Options & Digital Options Trading Platform", true);
     setMetaTag("og:description", "Trade forex, cryptocurrencies, indices and commodities on a secure online trading platform with M-Pesa deposits.", true);
     setMetaTag("og:type", "website", true);
-    setMetaTag("og:url", "https://pesaoption.com/", true);
+    setMetaTag("og:url", "https://pesaoption.site/", true);
     setMetaTag("og:site_name", "PesaOption", true);
 
     setMetaTag("twitter:card", "summary_large_image");
@@ -94,15 +94,15 @@ export const LandingView: React.FC<{
       canonical.setAttribute('rel', 'canonical');
       document.head.appendChild(canonical);
     }
-    canonical.setAttribute('href', 'https://pesaoption.site.je/');
+    canonical.setAttribute('href', 'https://pesaoption.site/');
 
     const schemaData = [
       {
         "@context": "https://schema.org",
         "@type": "Organization",
         "name": "PesaOption",
-        "url": "https://pesaoption.site.je",
-        "logo": "https://pesaoption.site.je/favicon.svg",
+        "url": "https://pesaoption.site",
+        "logo": "https://pesaoption.site/favicon.svg",
         "description": "Real online binary options, forex, and cryptocurrency trading platform with instant M-Pesa deposits.",
         "contactPoint": {
           "@type": "ContactPoint",
@@ -116,10 +116,10 @@ export const LandingView: React.FC<{
         "@context": "https://schema.org",
         "@type": "WebSite",
         "name": "PesaOption Trading Platform",
-        "url": "https://pesaoption.site.je",
+        "url": "https://pesaoption.site",
         "potentialAction": {
           "@type": "SearchAction",
-          "target": "https://pesaoption.site.je/#markets?q={search_term_string}",
+          "target": "https://pesaoption.site/#markets?q={search_term_string}",
           "query-input": "required name=search_term_string"
         }
       },

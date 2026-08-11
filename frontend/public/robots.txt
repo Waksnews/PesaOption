@@ -3,7 +3,6 @@ Allow: /
 Disallow: /admin
 Disallow: /dashboard
 Disallow: /api
-Disallow: /login
-Disallow: /register
+Disallow: /deposit/callback
 
-Sitemap: https://pesaoption.site.je/sitemap.xml
+Sitemap: https://pesaoption.site/sitemap.xml
