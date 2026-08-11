@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { useMarketStore } from '../stores/marketStore';
 import { useApp } from '../context/AppContext';
-import { TradingChart } from './TradingChart';
 
 import { SEO } from './SEO';
 
@@ -28,34 +27,8 @@ export const LandingView: React.FC<{
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Live Trading Execution State in Hero Section
-  const [simStake, setSimStake] = useState('100');
-  const [simDuration, setSimDuration] = useState(10);
-  const [simActiveTrade, setSimActiveTrade] = useState<{
-    type: 'CALL' | 'PUT';
-    stake: number;
-    barrier: number;
-    timeLeft: number;
-    symbol: string;
-  } | null>(null);
-  const [simTradeResult, setSimTradeResult] = useState<{
-    won: boolean;
-    profit: number;
-    barrier: number;
-    settlePrice: number;
-  } | null>(null);
-
   // Floating Ticker Notification
   const [heroMockProfit, setHeroMockProfit] = useState<string | null>(null);
-
-  // Selected asset or fallback
-  const currentMarket = prices.find(p => p.symbol === selectedSymbol) || prices[0] || {
-    symbol: 'VOL_100',
-    name: 'Volatility Index 100',
-    price: 12450.25,
-    change24h: 1.85,
-    category: 'vol_index'
-  };
 
   // --------------------------------------------------------------------------
   // Dynamic SEO Injection & Schema.org JSON-LD
@@ -183,38 +156,7 @@ export const LandingView: React.FC<{
     return () => clearInterval(timer);
   }, []);
 
-  // Trade execution countdown timer
-  useEffect(() => {
-    if (!simActiveTrade) return;
-    if (simActiveTrade.timeLeft <= 0) {
-      const settlePrice = currentMarket.price;
-      const barrier = simActiveTrade.barrier;
-      const isCall = simActiveTrade.type === 'CALL';
-      const won = isCall ? settlePrice >= barrier : settlePrice <= barrier;
-      const payoutRate = 0.95;
-      const profit = won ? simActiveTrade.stake * payoutRate : -simActiveTrade.stake;
 
-      setSimTradeResult({ won, profit, barrier, settlePrice });
-      setSimActiveTrade(null);
-    } else {
-      const timer = setTimeout(() => {
-        setSimActiveTrade(prev => prev ? { ...prev, timeLeft: prev.timeLeft - 1 } : null);
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [simActiveTrade, currentMarket.price]);
-
-  const handlePlaceSimTrade = (type: 'CALL' | 'PUT') => {
-    if (simActiveTrade) return;
-    setSimTradeResult(null);
-    setSimActiveTrade({
-      type,
-      stake: parseFloat(simStake) || 100,
-      barrier: currentMarket.price,
-      timeLeft: simDuration,
-      symbol: currentMarket.symbol
-    });
-  };
 
   return (
     <div className="bg-[#020617] text-[#F8FAFC] min-h-screen relative font-sans selection:bg-[#2563EB] selection:text-white max-w-full overflow-x-hidden">
@@ -348,209 +290,65 @@ export const LandingView: React.FC<{
       {/* ==================================================================== */}
       {/* 1. HERO SECTION */}
       {/* ==================================================================== */}
-      <section className="relative pt-8 pb-14 md:pt-16 md:pb-20 px-4 sm:px-8 max-w-7xl mx-auto z-10">
-        <div className="grid lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <section className="relative pt-10 pb-16 md:pt-20 md:pb-24 px-4 sm:px-8 max-w-5xl mx-auto z-10 text-center">
+        <div className="flex flex-col items-center space-y-6 max-w-3xl mx-auto">
           
-          {/* Left Text & CTA Column */}
-          <div className="lg:col-span-7 space-y-6 text-left">
-            
-            {/* Small Trust Badges */}
-            <div className="flex flex-wrap items-center gap-2 px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-full text-xs font-semibold text-slate-300 shadow-inner max-w-full">
-              <span className="text-[#10B981] flex items-center space-x-1"><Zap className="w-3.5 h-3.5" /> <span>Fast Execution</span></span>
-              <span className="text-slate-600 hidden sm:inline">•</span>
-              <span className="text-[#38BDF8] flex items-center space-x-1"><ShieldCheck className="w-3.5 h-3.5" /> <span>Secure Payments</span></span>
-              <span className="text-slate-600 hidden sm:inline">•</span>
-              <span className="text-[#10B981] flex items-center space-x-1"><BarChart2 className="w-3.5 h-3.5" /> <span>Real-Time Charts</span></span>
-              <span className="text-slate-600 hidden sm:inline">•</span>
-              <span className="text-[#38BDF8] flex items-center space-x-1"><Clock className="w-3.5 h-3.5" /> <span>24/7 Trading</span></span>
-            </div>
-
-            {/* SEO H1 Headline */}
-            <h1 className="font-display font-black text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.1] break-words">
-              Trade Binary Options with Confidence
-            </h1>
-
-            {/* Subheadline */}
-            <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl font-normal">
-              Trade forex, cryptocurrencies, stocks, indices and commodities on one secure platform with fast execution, competitive payouts and instant M-Pesa deposits.
-            </p>
-
-            {/* Call to Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
-              <button 
-                onClick={() => onEnterApp('register')}
-                className="px-8 py-4 bg-gradient-to-r from-[#2563EB] via-[#38BDF8] to-[#10B981] hover:brightness-110 text-slate-950 font-black rounded-xl flex items-center justify-center space-x-2 shadow-xl shadow-[#2563EB]/25 hover:scale-[1.02] active:scale-[0.98] transition text-base cursor-pointer"
-              >
-                <span>Open Account</span>
-                <ArrowRight className="w-5 h-5" />
-              </button>
-
-              <button 
-                onClick={() => onEnterApp('login')}
-                className="px-8 py-4 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-xl font-bold transition text-base flex items-center justify-center space-x-2 cursor-pointer"
-              >
-                <LogIn className="w-5 h-5 text-[#38BDF8]" />
-                <span>Log In</span>
-              </button>
-            </div>
-
-            {/* Floating Live Ticker Notification */}
-            <AnimatePresence>
-              {heroMockProfit && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="pt-1"
-                >
-                  <div className="inline-flex items-center space-x-2.5 px-4 py-2 bg-slate-900/90 border border-[#10B981]/40 rounded-xl text-xs text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-                    <span className="font-mono text-slate-300">{heroMockProfit}</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
+          {/* Feature Badges */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-2.5 px-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-full text-xs font-semibold text-slate-300 shadow-inner max-w-full">
+            <span className="text-[#10B981] flex items-center space-x-1.5"><Zap className="w-3.5 h-3.5" /> <span>Fast Execution</span></span>
+            <span className="text-slate-700 hidden sm:inline">•</span>
+            <span className="text-[#38BDF8] flex items-center space-x-1.5"><ShieldCheck className="w-3.5 h-3.5" /> <span>Secure Payments</span></span>
+            <span className="text-slate-700 hidden sm:inline">•</span>
+            <span className="text-[#10B981] flex items-center space-x-1.5"><BarChart2 className="w-3.5 h-3.5" /> <span>Real-Time Charts</span></span>
+            <span className="text-slate-700 hidden sm:inline">•</span>
+            <span className="text-[#38BDF8] flex items-center space-x-1.5"><Clock className="w-3.5 h-3.5" /> <span>24/7 Trading</span></span>
           </div>
 
-          {/* Right Column: Live Interactive Trading Dashboard Preview */}
-          <div className="lg:col-span-5 relative">
-            <div className="bg-[#0B132B] border border-slate-800 rounded-3xl p-5 shadow-2xl shadow-blue-950/40 relative overflow-hidden">
-              
-              {/* Header Bar */}
-              <div className="flex items-center justify-between pb-3.5 border-b border-slate-800">
-                <div className="flex items-center space-x-3">
-                  <select 
-                    value={selectedSymbol}
-                    onChange={(e) => setSelectedSymbol(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#2563EB]"
-                  >
-                    {prices.map(p => (
-                      <option key={p.symbol} value={p.symbol}>
-                        {p.symbol} - {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-xs font-mono font-bold text-[#10B981]">
-                    ${currentMarket.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+          {/* SEO H1 Headline */}
+          <h1 className="font-display font-black text-3xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-[1.15] break-words">
+            Trade Binary Options with Confidence
+          </h1>
 
-                <span className="text-[10px] font-mono font-bold px-2.5 py-1 bg-[#10B981]/10 text-[#10B981] border border-[#10B981]/30 rounded-full">
-                  95% Max Payout
-                </span>
-              </div>
+          {/* Subheadline */}
+          <p className="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl font-normal">
+            Trade forex, cryptocurrencies, stocks, indices and commodities on one secure platform with fast execution, competitive payouts and instant M-Pesa deposits.
+          </p>
 
-              {/* Floating Market Cards (BTC, EUR/USD, Gold, NASDAQ) */}
-              <div className="grid grid-cols-2 xs:grid-cols-4 gap-2 my-3 min-w-0">
-                {prices.slice(0, 4).map(item => {
-                  const isUp = item.change24h >= 0;
-                  return (
-                    <div 
-                      key={item.symbol} 
-                      onClick={() => setSelectedSymbol(item.symbol)}
-                      className={`p-2 rounded-xl border text-center cursor-pointer transition ${
-                        selectedSymbol === item.symbol 
-                          ? 'bg-slate-800 border-[#2563EB]' 
-                          : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-[10px] font-bold text-white tracking-wider truncate">{item.symbol}</div>
-                      <div className={`text-[10px] font-mono font-bold ${isUp ? 'text-[#10B981]' : 'text-red-400'}`}>
-                        {isUp ? '+' : ''}{item.change24h.toFixed(1)}%
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          {/* Call to Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3.5 w-full sm:w-auto pt-2">
+            <button 
+              onClick={() => onEnterApp('register')}
+              className="px-8 py-4 bg-gradient-to-r from-[#2563EB] via-[#38BDF8] to-[#10B981] hover:brightness-110 text-slate-950 font-black rounded-xl flex items-center justify-center space-x-2 shadow-xl shadow-[#2563EB]/25 hover:scale-[1.02] active:scale-[0.98] transition text-base cursor-pointer w-full sm:w-auto"
+            >
+              <span>Open Account</span>
+              <ArrowRight className="w-5 h-5" />
+            </button>
 
-              {/* Candlestick Chart Preview */}
-              <div className="h-[220px] rounded-2xl overflow-hidden border border-slate-800 bg-slate-950/80 relative">
-                <TradingChart symbol={currentMarket.symbol} currentPrice={currentMarket.price} />
-              </div>
-
-              {/* Interactive Quick Trade Execution Preview */}
-              <div className="space-y-3 pt-3">
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="text-[10px] uppercase font-mono text-slate-400 font-bold block mb-1">
-                      Stake ($)
-                    </label>
-                    <input 
-                      type="number"
-                      value={simStake}
-                      onChange={(e) => setSimStake(e.target.value)}
-                      disabled={!!simActiveTrade}
-                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-[#2563EB]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] uppercase font-mono text-slate-400 font-bold block mb-1">
-                      Duration
-                    </label>
-                    <select 
-                      value={simDuration}
-                      onChange={(e) => setSimDuration(Number(e.target.value))}
-                      disabled={!!simActiveTrade}
-                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-[#2563EB]"
-                    >
-                      <option value={10}>10 Seconds</option>
-                      <option value={30}>30 Seconds</option>
-                      <option value={60}>60 Seconds</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={() => handlePlaceSimTrade('CALL')}
-                    disabled={!!simActiveTrade}
-                    className="py-2.5 bg-[#10B981] hover:bg-emerald-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1 shadow-lg shadow-[#10B981]/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                  >
-                    <TrendingUp className="w-4 h-4" />
-                    <span>Higher (Call)</span>
-                  </button>
-
-                  <button 
-                    onClick={() => handlePlaceSimTrade('PUT')}
-                    disabled={!!simActiveTrade}
-                    className="py-2.5 bg-[#EF4444] hover:bg-red-500 text-white font-black rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-1 shadow-lg shadow-[#EF4444]/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                  >
-                    <TrendingDown className="w-4 h-4" />
-                    <span>Lower (Put)</span>
-                  </button>
-                </div>
-
-                {simActiveTrade && (
-                  <div className="p-2.5 bg-slate-900 border border-[#2563EB]/40 rounded-xl text-xs flex items-center justify-between text-slate-200">
-                    <span className="font-mono text-slate-400">
-                      Option Active ({simActiveTrade.type}): ${simActiveTrade.barrier.toFixed(2)}
-                    </span>
-                    <span className="font-mono font-bold text-[#38BDF8] animate-pulse">
-                      {simActiveTrade.timeLeft}s left
-                    </span>
-                  </div>
-                )}
-
-                {simTradeResult && (
-                  <div className={`p-2.5 border rounded-xl text-xs flex items-center justify-between ${
-                    simTradeResult.won 
-                      ? 'bg-[#10B981]/15 border-[#10B981]/50 text-[#10B981]' 
-                      : 'bg-[#EF4444]/15 border-[#EF4444]/50 text-[#EF4444]'
-                  }`}>
-                    <span className="font-bold">
-                      {simTradeResult.won ? 'Option Settled WIN 🎉' : 'Option Settled LOSS'}
-                    </span>
-                    <span className="font-mono font-bold">
-                      {simTradeResult.won ? `+$${simTradeResult.profit.toFixed(2)}` : `-$${Math.abs(simTradeResult.profit).toFixed(2)}`}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-            </div>
+            <button 
+              onClick={() => onEnterApp('login')}
+              className="px-8 py-4 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white rounded-xl font-bold transition text-base flex items-center justify-center space-x-2 cursor-pointer w-full sm:w-auto"
+            >
+              <LogIn className="w-5 h-5 text-[#38BDF8]" />
+              <span>Log In</span>
+            </button>
           </div>
+
+          {/* Floating Live Ticker Notification */}
+          <AnimatePresence>
+            {heroMockProfit && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="pt-1"
+              >
+                <div className="inline-flex items-center space-x-2.5 px-4 py-2 bg-slate-900/90 border border-[#10B981]/40 rounded-xl text-xs text-slate-200">
+                  <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
+                  <span className="font-mono text-[#10B981] font-bold">{heroMockProfit}</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         </div>
       </section>
@@ -730,38 +528,46 @@ export const LandingView: React.FC<{
             </button>
           </div>
 
-          {/* Right Interface Mockup */}
-          <div className="lg:col-span-7 bg-[#0B132B] border border-slate-800 rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800 text-xs">
-              <div className="flex items-center space-x-2">
-                <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
-                <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
-                <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
-                <span className="font-mono text-slate-400 ml-2">PesaOption Web Trader v2.4</span>
+          {/* Right Feature Cards Grid */}
+          <div className="lg:col-span-7 grid sm:grid-cols-2 gap-4">
+            <div className="p-6 bg-[#0B132B] border border-slate-800 rounded-2xl space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-[#10B981]/15 text-[#10B981] flex items-center justify-center font-bold">
+                <Zap className="w-5 h-5" />
               </div>
-              <span className="font-mono text-[#10B981] font-bold">● Live Connection</span>
+              <h3 className="font-bold text-white text-base">Sub-10ms Order Latency</h3>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Direct market connectivity ensures instant order routing with maximum precision and zero slippage.
+              </p>
             </div>
 
-            <div className="my-4 grid grid-cols-1 xs:grid-cols-3 gap-2 sm:gap-3 text-xs font-mono">
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div className="text-slate-400 text-[10px]">EUR/USD</div>
-                <div className="text-white font-bold mt-1">1.0842</div>
-                <div className="text-[#10B981] text-[10px]">+0.24%</div>
+            <div className="p-6 bg-[#0B132B] border border-slate-800 rounded-2xl space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-[#38BDF8]/15 text-[#38BDF8] flex items-center justify-center font-bold">
+                <ShieldCheck className="w-5 h-5" />
               </div>
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div className="text-slate-400 text-[10px]">BTC/USD</div>
-                <div className="text-white font-bold mt-1">$64,210</div>
-                <div className="text-[#10B981] text-[10px]">+2.15%</div>
-              </div>
-              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div className="text-slate-400 text-[10px]">XAU/USD</div>
-                <div className="text-white font-bold mt-1">$2,385</div>
-                <div className="text-[#10B981] text-[10px]">+0.85%</div>
-              </div>
+              <h3 className="font-bold text-white text-base">256-Bit SSL Security</h3>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Bank-grade encryption protecting every transaction, balance update, and personal data point.
+              </p>
             </div>
 
-            <div className="h-[240px] bg-slate-950/90 rounded-2xl border border-slate-800 overflow-hidden relative">
-              <TradingChart symbol={selectedSymbol} currentPrice={currentMarket.price} />
+            <div className="p-6 bg-[#0B132B] border border-slate-800 rounded-2xl space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-[#2563EB]/15 text-[#2563EB] flex items-center justify-center font-bold">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-white text-base">Instant M-Pesa Payouts</h3>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Deposit and withdraw directly from your mobile wallet with automated STK push speed.
+              </p>
+            </div>
+
+            <div className="p-6 bg-[#0B132B] border border-slate-800 rounded-2xl space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center font-bold">
+                <Award className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-white text-base">Up to 95% Payout Rates</h3>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                High precision payout structure on winning options across forex, crypto, and commodities.
+              </p>
             </div>
           </div>
 

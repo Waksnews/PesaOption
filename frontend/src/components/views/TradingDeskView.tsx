@@ -11,10 +11,12 @@ import { useNotificationStore } from '../../stores/notificationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { formatCurrency, getUsdKesRate } from '../../lib/currency';
 import { TradingChart } from '../TradingChart';
+import { RealAccountConfirmModal } from '../modals/RealAccountConfirmModal';
 import { 
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Sparkles, 
   RefreshCw, Circle, ChevronDown, ChevronUp, Check, Search, 
-  Clock, DollarSign, Activity, Layers, Sliders, X, ShieldAlert
+  Clock, DollarSign, Activity, Layers, Sliders, X, ShieldAlert,
+  Gamepad2, Wallet, AlertTriangle
 } from 'lucide-react';
 
 const getPayoutRate = (category: string): number => {
@@ -55,6 +57,7 @@ export const TradingDeskView: React.FC = () => {
   
   // Mobile drawer for active contracts
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
   const rate = getUsdKesRate() || 130;
 
@@ -62,6 +65,18 @@ export const TradingDeskView: React.FC = () => {
   const { balance: realUsd, demoBalance: demoUsd } = getUsdBalance();
   const activeUsdBalance = isDemo ? demoUsd : realUsd;
   const activeDisplayBalance = tradeCurrency === 'KES' ? activeUsdBalance * rate : activeUsdBalance;
+
+  // Formatted balance strings for DEMO and REAL mode
+  const demoDisplayVal = tradeCurrency === 'KES' ? demoUsd * rate : demoUsd;
+  const realDisplayVal = tradeCurrency === 'KES' ? realUsd * rate : realUsd;
+
+  const demoBalanceDisplay = tradeCurrency === 'KES'
+    ? `KSh ${demoDisplayVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `$${demoUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const realBalanceDisplay = tradeCurrency === 'KES'
+    ? `KSh ${realDisplayVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `$${realUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Market details
   const currentMarket = getMarketBySymbol(selectedSymbol) || prices[0] || {
@@ -165,7 +180,7 @@ export const TradingDeskView: React.FC = () => {
     <div className="flex flex-col h-full space-y-3 pb-24 lg:pb-0">
       
       {/* Top Header Ticker Bar & Market Info (Mobile + Desktop Header) */}
-      <div className="bg-[#090D1A] border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl relative z-30">
+      <div className="bg-[#090D1A] border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-xl relative z-10">
         
         {/* Left: Asset Selector & Live Price */}
         <div className="flex items-center space-x-3">
@@ -206,44 +221,6 @@ export const TradingDeskView: React.FC = () => {
             <span className="font-black text-xs text-emerald-400">
               +{(yieldRate * 100).toFixed(0)}%
             </span>
-          </div>
-
-          {/* Account Balance & Currency Switcher Header Pill */}
-          <div className="flex items-center space-x-1.5 bg-slate-950 border border-slate-800 p-1 rounded-xl">
-            <button
-              onClick={() => setIsDemo(!isDemo)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition ${
-                isDemo ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-              }`}
-            >
-              {isDemo ? 'DEMO' : 'REAL'}
-            </button>
-
-            <span className="text-xs font-mono font-bold text-slate-200 px-1">
-              {tradeCurrency === 'KES' ? `KES ${activeDisplayBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${activeDisplayBalance.toFixed(2)}`}
-            </span>
-
-            {/* Currency Selector Switcher KES ↔ USD */}
-            <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-              <button
-                type="button"
-                onClick={() => handleCurrencyToggle('KES')}
-                className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded transition ${
-                  tradeCurrency === 'KES' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                KES
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCurrencyToggle('USD')}
-                className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded transition ${
-                  tradeCurrency === 'USD' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                USD
-              </button>
-            </div>
           </div>
         </div>
 
@@ -555,13 +532,6 @@ export const TradingDeskView: React.FC = () => {
                 <div className="flex items-center space-x-1.5">
                   <Sliders className="w-4 h-4 text-teal-400" />
                   <span className="text-xs font-bold text-slate-100">Trade Execution</span>
-                </div>
-                <div className="flex items-center space-x-1.5">
-                  <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
-                    isDemo ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                  }`}>
-                    {isDemo ? 'DEMO' : 'REAL'}
-                  </span>
                 </div>
               </div>
 
@@ -879,6 +849,14 @@ export const TradingDeskView: React.FC = () => {
 
         </div>
       </div>
+
+      {/* Real Account Switch Confirmation Modal */}
+      <RealAccountConfirmModal
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={() => setIsDemo(false)}
+        realBalanceDisplay={realBalanceDisplay}
+      />
 
     </div>
   );

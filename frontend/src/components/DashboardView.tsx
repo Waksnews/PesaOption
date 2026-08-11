@@ -33,6 +33,7 @@ import { WithdrawModal } from './modals/WithdrawModal';
 import { SupportChat } from './SupportChat';
 import { ToastContainer } from './ToastContainer';
 import { TradeSettleOverlay } from './TradeSettleOverlay';
+import { RealAccountConfirmModal } from './modals/RealAccountConfirmModal';
 
 import { 
   TrendingUp, Wallet as WalletIcon, Gift, MessageSquare, Settings as SettingsIcon, ShieldCheck, 
@@ -53,6 +54,7 @@ export const DashboardView: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
   // Activate SSE connection for live prices and settlement logic
   useSSE();
@@ -93,7 +95,7 @@ export const DashboardView: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 relative">
         
         {/* Top Header Navbar */}
-        <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-3 sm:px-6 flex items-center justify-between relative z-30">
+        <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-3 sm:px-6 flex items-center justify-between relative z-[100]">
           
           {/* Top Left Menu Trigger */}
           <div className="flex items-center space-x-4">
@@ -189,90 +191,109 @@ export const DashboardView: React.FC = () => {
             <div className="relative">
               <button 
                 onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
-                className="flex items-center space-x-2 bg-[#0D1527] hover:bg-[#131E38] border border-slate-850 px-4 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer select-none"
+                className={`flex items-center space-x-2 border px-3.5 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer select-none ${
+                  isDemo 
+                    ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/50' 
+                    : 'bg-amber-950/30 border-amber-500/40 text-amber-300 hover:bg-amber-950/50'
+                }`}
               >
-                <div className={`w-2 h-2 rounded-full ${isDemo ? 'bg-orange-500' : 'bg-teal-500'} animate-pulse`} />
-                <span className="font-bold text-slate-100">
-                  {isDemo ? 'D ' : 'R '}
+                <div className={`w-2 h-2 rounded-full ${isDemo ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
+                <span className="font-black">
+                  {isDemo ? '🟢 DEMO ' : '🟠 REAL '}
                   {formatCurrency(activeUsdBalance, currency)}
                 </span>
                 <span className="text-slate-500 text-[8px]">▼</span>
               </button>
 
               {accountDropdownOpen && (
-                <div className="absolute right-0 mt-2.5 w-72 bg-[#090D1A] border border-slate-800 rounded-2xl p-4 shadow-2xl z-50 space-y-3">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
-                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider font-bold">Switch Account</span>
-                    <button onClick={() => setAccountDropdownOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-200 font-bold uppercase">
-                      Close
-                    </button>
-                  </div>
-
-                  {/* Real Account Box */}
+                <>
                   <div 
-                    onClick={() => { setIsDemo(false); setAccountDropdownOpen(false); }}
-                    className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
-                      !isDemo 
-                        ? 'bg-blue-600/10 border-blue-500/40 text-slate-100' 
-                        : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide">Real Account</p>
-                      <p className="text-sm font-mono font-bold text-slate-100 mt-1">
-                        R {formatCurrency(balance, currency)}
-                      </p>
+                    className="fixed inset-0 z-[110]" 
+                    onClick={() => setAccountDropdownOpen(false)} 
+                  />
+                  <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#090D1A] border border-slate-800 rounded-2xl p-4 shadow-2xl shadow-black/90 z-[120] space-y-3">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider font-bold">Switch Account Mode</span>
+                      <button onClick={() => setAccountDropdownOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-200 font-bold uppercase">
+                        Close
+                      </button>
                     </div>
-                    <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded ${
-                      !isDemo ? 'bg-blue-500/20 text-blue-400 border border-blue-500/35' : 'bg-slate-800 text-slate-500'
-                    }`}>
-                      {!isDemo ? 'Active' : 'Select'}
-                    </span>
-                  </div>
 
-                  {/* Demo Account Box */}
-                  <div 
-                    onClick={() => { setIsDemo(true); setAccountDropdownOpen(false); }}
-                    className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
-                      isDemo 
-                        ? 'bg-orange-600/10 border-orange-500/40 text-slate-100' 
-                        : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide">Demo Account</p>
-                      <p className="text-sm font-mono font-bold text-slate-100 mt-1">
-                        D {formatCurrency(demoBalance, currency)}
-                      </p>
-                    </div>
-                    <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded ${
-                      isDemo ? 'bg-orange-500/20 text-orange-400 border border-orange-500/35' : 'bg-slate-800 text-slate-500'
-                    }`}>
-                      {isDemo ? 'Active' : 'Select'}
-                    </span>
-                  </div>
-
-                  {/* Reload funds */}
-                  <div className="flex justify-between items-center pt-2 border-t border-slate-850">
-                    <span className="text-[9px] text-slate-500 font-mono">Practice Account</span>
-                    <button 
-                      onClick={async () => {
-                        const amountNeeded = Math.max(0, 10000 - demoBalance);
-                        if (amountNeeded > 0) {
-                          await useWalletStore.getState().deposit(amountNeeded, 'USD');
-                          addToast('Demo Balance Restored', 'Practice funds topped up to $10,000.', 'success');
-                        } else {
-                          addToast('Balance Cap Reached', 'Demo balance is already at or above $10,000.', 'info');
-                        }
-                        setAccountDropdownOpen(false);
-                      }}
-                      className="text-[10px] text-orange-400 hover:text-orange-300 font-mono flex items-center space-x-1 cursor-pointer"
+                    {/* Demo Account Box */}
+                    <div 
+                      onClick={() => { setIsDemo(true); setAccountDropdownOpen(false); }}
+                      className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
+                        isDemo 
+                          ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300' 
+                          : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
+                      }`}
                     >
-                      <RefreshCw className="w-3 h-3 text-orange-400" />
-                      <span>Top-Up Demo</span>
-                    </button>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide flex items-center space-x-1">
+                          <span>🟢 DEMO ACCOUNT</span>
+                        </p>
+                        <p className="text-sm font-mono font-bold text-slate-100 mt-1">
+                          {formatCurrency(demoBalance, currency)}
+                        </p>
+                      </div>
+                      <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold ${
+                        isDemo ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {isDemo ? 'Active' : 'Select'}
+                      </span>
+                    </div>
+
+                    {/* Real Account Box */}
+                    <div 
+                      onClick={() => { 
+                        setAccountDropdownOpen(false); 
+                        if (isDemo) {
+                          setConfirmModalOpen(true);
+                        }
+                      }}
+                      className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
+                        !isDemo 
+                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-300' 
+                          : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide flex items-center space-x-1">
+                          <span>🟠 REAL ACCOUNT</span>
+                        </p>
+                        <p className="text-sm font-mono font-bold text-slate-100 mt-1">
+                          {formatCurrency(balance, currency)}
+                        </p>
+                      </div>
+                      <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold ${
+                        !isDemo ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {!isDemo ? 'Active' : 'Select'}
+                      </span>
+                    </div>
+
+                    {/* Reload funds */}
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-850">
+                      <span className="text-[9px] text-slate-500 font-mono">Practice Account</span>
+                      <button 
+                        onClick={async () => {
+                          const amountNeeded = Math.max(0, 10000 - demoBalance);
+                          if (amountNeeded > 0) {
+                            await useWalletStore.getState().deposit(amountNeeded, 'USD');
+                            addToast('Demo Balance Restored', 'Practice funds topped up to $10,000.', 'success');
+                          } else {
+                            addToast('Balance Cap Reached', 'Demo balance is already at or above $10,000.', 'info');
+                          }
+                          setAccountDropdownOpen(false);
+                        }}
+                        className="text-[10px] text-orange-400 hover:text-orange-300 font-mono flex items-center space-x-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3 text-orange-400" />
+                        <span>Top-Up Demo</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
 
@@ -289,25 +310,31 @@ export const DashboardView: React.FC = () => {
               </button>
 
               {bellOpen && (
-                <div className="absolute right-0 mt-3 w-80 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-4 z-50">
-                  <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2">
-                    <span className="font-display font-semibold text-xs text-slate-350 uppercase tracking-wider">Alerts Feed</span>
-                    <button onClick={() => setBellOpen(false)} className="text-[10px] text-slate-550 hover:text-slate-350 uppercase">Close</button>
+                <>
+                  <div 
+                    className="fixed inset-0 z-[110]" 
+                    onClick={() => setBellOpen(false)} 
+                  />
+                  <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-[#090D1A] border border-slate-800 rounded-2xl p-4 shadow-2xl shadow-black/90 z-[120] space-y-3">
+                    <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2">
+                      <span className="font-display font-semibold text-xs text-slate-350 uppercase tracking-wider">Alerts Feed</span>
+                      <button onClick={() => setBellOpen(false)} className="text-[10px] text-slate-550 hover:text-slate-350 uppercase">Close</button>
+                    </div>
+                    <div className="space-y-3.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
+                      {notifications.length === 0 ? (
+                        <p className="text-[10px] text-slate-500 text-center py-4">No active system notifications.</p>
+                      ) : (
+                        notifications.slice(0, 8).map(n => (
+                          <div key={n.id} className="text-xs space-y-1">
+                            <p className={`font-semibold ${n.read ? 'text-slate-400' : 'text-teal-400'}`}>{n.title}</p>
+                            <p className="text-[11px] text-slate-450 leading-relaxed">{n.message}</p>
+                            <p className="text-[9px] text-slate-600 font-mono">{new Date(n.createdAt).toLocaleDateString()}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-3.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                    {notifications.length === 0 ? (
-                      <p className="text-[10px] text-slate-500 text-center py-4">No active system notifications.</p>
-                    ) : (
-                      notifications.slice(0, 8).map(n => (
-                        <div key={n.id} className="text-xs space-y-1">
-                          <p className={`font-semibold ${n.read ? 'text-slate-400' : 'text-teal-400'}`}>{n.title}</p>
-                          <p className="text-[11px] text-slate-450 leading-relaxed">{n.message}</p>
-                          <p className="text-[9px] text-slate-600 font-mono">{new Date(n.createdAt).toLocaleDateString()}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                </>
               )}
             </div>
 
@@ -340,6 +367,12 @@ export const DashboardView: React.FC = () => {
       <SupportChat />
       <ToastContainer />
       <TradeSettleOverlay />
+      <RealAccountConfirmModal 
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={() => setIsDemo(false)}
+        realBalanceDisplay={formatCurrency(balance, currency)}
+      />
 
     </div>
   );
