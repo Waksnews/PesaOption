@@ -6,7 +6,7 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
-import { Database, getPrismaClient, hashPassword } from './server/db';
+import { Database, getPrismaClient, hashPassword, toSafeISOString } from './server/db';
 import { 
   User, UserRole, Wallet, Transaction, TransactionType, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog, MarketPrice,
@@ -566,14 +566,14 @@ app.post('/api/auth/login', async (req, res) => {
           fullName: dbUser.fullName,
           role: dbUser.role as UserRole,
           phoneNumber: dbUser.phoneNumber || undefined,
-          referralCode: dbUser.referralCode || undefined,
+          verified: dbUser.verified ?? true,
+          referralCode: dbUser.referralCode || '',
           referredBy: dbUser.referredBy || undefined,
           avatarUrl: dbUser.avatarUrl || undefined,
           passwordResetToken: dbUser.passwordResetToken || undefined,
-          passwordResetExpires: dbUser.passwordResetExpires ? dbUser.passwordResetExpires.toISOString() : undefined,
-          passwordChangedAt: dbUser.passwordChangedAt ? dbUser.passwordChangedAt.toISOString() : undefined,
-          createdAt: dbUser.createdAt.toISOString(),
-          updatedAt: dbUser.updatedAt.toISOString(),
+          passwordResetExpires: toSafeISOString(dbUser.passwordResetExpires),
+          passwordChangedAt: toSafeISOString(dbUser.passwordChangedAt),
+          createdAt: toSafeISOString(dbUser.createdAt) || new Date().toISOString()
         };
         console.log(`[AUTH] Login user lookup: found`);
       } else {

@@ -67,6 +67,19 @@ export function hashPassword(password: string): string {
   return hash.toString('hex');
 }
 
+// Safe ISO Date string converter helper
+export function toSafeISOString(val: any): string | undefined {
+  if (!val) return undefined;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? undefined : val.toISOString();
+  }
+  if (typeof val === 'string' || typeof val === 'number') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
+  }
+  return undefined;
+}
+
 // Lazy/safe Prisma client instantiation
 let prismaClientInstance: PrismaClient | null = null;
 export function getPrismaClient(): PrismaClient | null {
@@ -146,9 +159,9 @@ export class Database {
             referredBy: u.referredBy || undefined,
             avatarUrl: u.avatarUrl || undefined,
             passwordResetToken: u.passwordResetToken || undefined,
-            passwordResetExpires: u.passwordResetExpires ? u.passwordResetExpires.toISOString() : undefined,
-            passwordChangedAt: u.passwordChangedAt ? u.passwordChangedAt.toISOString() : undefined,
-            createdAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString()
+            passwordResetExpires: toSafeISOString(u.passwordResetExpires),
+            passwordChangedAt: toSafeISOString(u.passwordChangedAt),
+            createdAt: toSafeISOString(u.createdAt) || new Date().toISOString()
           }));
 
           this.data.wallets = wallets.map((w: any) => ({
@@ -157,7 +170,7 @@ export class Database {
             asset: w.asset,
             balance: Number(w.balance),
             demoBalance: Number(w.demoBalance),
-            updatedAt: w.updatedAt ? w.updatedAt.toISOString() : new Date().toISOString()
+            updatedAt: toSafeISOString(w.updatedAt) || new Date().toISOString()
           }));
 
           this.data.transactions = transactions.map((t: any) => ({
@@ -171,7 +184,7 @@ export class Database {
             txHash: t.txHash || '',
             description: t.description || '',
             phone: t.phone || undefined,
-            createdAt: t.createdAt ? t.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(t.createdAt) || new Date().toISOString()
           }));
 
           this.data.trades = trades.map((tr: any) => ({
@@ -185,12 +198,12 @@ export class Database {
             status: tr.status as any,
             pnl: Number(tr.pnl),
             isDemo: tr.isDemo,
-            createdAt: tr.createdAt ? tr.createdAt.toISOString() : new Date().toISOString(),
-            closedAt: tr.closedAt ? tr.closedAt.toISOString() : undefined,
+            createdAt: toSafeISOString(tr.createdAt) || new Date().toISOString(),
+            closedAt: toSafeISOString(tr.closedAt),
             contractType: (tr.contractType as any) || 'spot',
             prediction: tr.prediction || undefined,
             durationSeconds: tr.durationSeconds != null ? tr.durationSeconds : undefined,
-            expiryTime: tr.expiryTime ? tr.expiryTime.toISOString() : undefined,
+            expiryTime: toSafeISOString(tr.expiryTime),
             barrier: tr.barrier != null ? Number(tr.barrier) : undefined,
             payoutRate: tr.payoutRate != null ? Number(tr.payoutRate) : undefined,
             settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : undefined
@@ -204,14 +217,14 @@ export class Database {
             title: st.title,
             description: st.description,
             status: st.status as any,
-            createdAt: st.createdAt ? st.createdAt.toISOString() : new Date().toISOString(),
+            createdAt: toSafeISOString(st.createdAt) || new Date().toISOString(),
             replies: (st.replies || []).map((r: any) => ({
               id: r.id,
               userId: r.userId,
               fullName: r.fullName,
               role: r.role as any,
               message: r.message,
-              createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString()
+              createdAt: toSafeISOString(r.createdAt) || new Date().toISOString()
             }))
           }));
 
@@ -220,7 +233,7 @@ export class Database {
             title: a.title,
             content: a.content,
             type: a.type as any,
-            createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(a.createdAt) || new Date().toISOString()
           }));
 
           this.data.notifications = notifications.map((n: any) => ({
@@ -229,14 +242,14 @@ export class Database {
             title: n.title,
             message: n.message,
             read: n.read,
-            createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(n.createdAt) || new Date().toISOString()
           }));
 
           this.data.referralCodes = referralCodes.map((rc: any) => ({
             id: rc.id,
             userId: rc.userId,
             code: rc.code,
-            createdAt: rc.createdAt ? rc.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(rc.createdAt) || new Date().toISOString()
           }));
 
           this.data.referralEarnings = referralEarnings.map((re: any) => ({
@@ -245,7 +258,7 @@ export class Database {
             referrerId: re.referrerId,
             amount: Number(re.amount),
             description: re.description,
-            createdAt: re.createdAt ? re.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(re.createdAt) || new Date().toISOString()
           }));
 
           this.data.activityLogs = activityLogs.map((al: any) => ({
@@ -254,7 +267,7 @@ export class Database {
             action: al.action,
             ipAddress: al.ipAddress,
             details: al.details,
-            createdAt: al.createdAt ? al.createdAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(al.createdAt) || new Date().toISOString()
           }));
 
           this.data.mpesaTransactions = mpesaTxs.map((m: any) => ({
@@ -268,8 +281,8 @@ export class Database {
             status: m.status as any,
             resultCode: m.resultCode != null ? m.resultCode : undefined,
             resultDesc: m.resultDesc || undefined,
-            createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
-            updatedAt: m.updatedAt ? m.updatedAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(m.createdAt) || new Date().toISOString(),
+            updatedAt: toSafeISOString(m.updatedAt) || new Date().toISOString()
           }));
 
           this.data.paymentTransactions = paymentTxs.map((p: any) => ({
@@ -292,8 +305,8 @@ export class Database {
             netAmount: p.netAmount != null ? Number(p.netAmount) : undefined,
             environment: p.environment || undefined,
             real: p.real != null ? p.real : undefined,
-            createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
-            updatedAt: p.updatedAt ? p.updatedAt.toISOString() : new Date().toISOString()
+            createdAt: toSafeISOString(p.createdAt) || new Date().toISOString(),
+            updatedAt: toSafeISOString(p.updatedAt) || new Date().toISOString()
           }));
 
           this.data.withdrawalRequests = withdrawalReqs.map((w: any) => ({
@@ -308,11 +321,11 @@ export class Database {
             accountDetails: w.accountDetails || undefined,
             status: w.status as any,
             remarks: w.remarks || undefined,
-            createdAt: w.createdAt ? w.createdAt.toISOString() : new Date().toISOString(),
-            updatedAt: w.updatedAt ? w.updatedAt.toISOString() : new Date().toISOString(),
+            createdAt: toSafeISOString(w.createdAt) || new Date().toISOString(),
+            updatedAt: toSafeISOString(w.updatedAt) || new Date().toISOString(),
             approvedBy: w.approvedBy || undefined,
-            approvedAt: w.approvedAt ? w.approvedAt.toISOString() : undefined,
-            rejectedAt: w.rejectedAt ? w.rejectedAt.toISOString() : undefined,
+            approvedAt: toSafeISOString(w.approvedAt),
+            rejectedAt: toSafeISOString(w.rejectedAt),
           }));
 
           console.log(`[DB] Successfully loaded from PostgreSQL (${this.data.users.length} users, ${this.data.wallets.length} wallets, ${this.data.trades.length} trades, ${this.data.transactions.length} transactions).`);
