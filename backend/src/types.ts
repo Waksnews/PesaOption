@@ -165,7 +165,7 @@ export interface MpesaTransaction {
   updatedAt: string;
 }
 
-export type PaymentStatus = 'Pending' | 'Completed' | 'Failed' | 'Cancelled';
+export type PaymentStatus = 'Pending' | 'Completed' | 'Failed' | 'Cancelled' | 'SUCCESS' | 'PENDING';
 
 export interface PaymentTransaction {
   id: string;

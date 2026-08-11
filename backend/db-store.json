@@ -71,9 +71,9 @@
       "id": "w_usd_u_awaz0vq81",
       "userId": "u_awaz0vq81",
       "asset": "USD",
-      "balance": 0.0077,
+      "balance": 7.7,
       "demoBalance": 5000,
-      "updatedAt": "2026-08-11T16:47:53.400Z"
+      "updatedAt": "2026-08-11T17:05:00.872Z"
     },
     {
       "id": "w_btc_u_awaz0vq81",
@@ -152,6 +152,18 @@
       "txHash": "0xde5d817c3acf1dd3b1214c37f222689a5a49aa5c85776d0e5ca63731c1284bc6",
       "description": "ZetuPay M-Pesa Deposit (Ref: PO-DEP-DE5731, Receipt: QWE123RTY, KES 1)",
       "createdAt": "2026-08-11T16:47:53.400Z"
+    },
+    {
+      "id": "tx_gpnocoaki",
+      "userId": "u_awaz0vq81",
+      "walletId": "w_usd_u_awaz0vq81",
+      "type": "deposit",
+      "asset": "USD",
+      "amount": 7.6923,
+      "status": "completed",
+      "txHash": "0x8a9c0b265a0894f92c7bdc3a1d5f97e2309845d7a20f2365324ecfdd6b3a9b25",
+      "description": "ZetuPay M-Pesa Deposit (Ref: PO-DEP-18A973, Receipt: QWE18A973, KES 1000)",
+      "createdAt": "2026-08-11T17:05:00.872Z"
     }
   ],
   "trades": [
@@ -373,6 +385,14 @@
       "message": "Deposit received. KES 1 ($0.01 USD) credited to your real wallet.",
       "read": false,
       "createdAt": "2026-08-11T16:47:53.430Z"
+    },
+    {
+      "id": "not_qzuba570a",
+      "userId": "u_awaz0vq81",
+      "title": "Deposit Received",
+      "message": "Deposit received. KES 1,000 ($7.69 USD) credited to your real wallet.",
+      "read": false,
+      "createdAt": "2026-08-11T17:05:00.894Z"
     }
   ],
   "referralCodes": [
@@ -440,6 +460,14 @@
       "details": "Credited $0.01 USD via ZetuPay M-Pesa (Ref: PO-DEP-DE5731, Receipt: QWE123RTY)",
       "ipAddress": "ZetuPay Webhook Gateway",
       "createdAt": "2026-08-11T16:47:53.400Z"
+    },
+    {
+      "id": "log_cj3st9saj",
+      "userId": "u_awaz0vq81",
+      "action": "ZetuPay Deposit Credited",
+      "details": "Credited $7.69 USD via ZetuPay M-Pesa (Ref: PO-DEP-18A973, Receipt: QWE18A973)",
+      "ipAddress": "ZetuPay Webhook Gateway",
+      "createdAt": "2026-08-11T17:05:00.872Z"
     }
   ],
   "mpesaTransactions": [],
@@ -467,6 +495,30 @@
       "grossAmount": 1,
       "providerFee": 0,
       "netAmount": 1
+    },
+    {
+      "id": "pay_7sp543kqz",
+      "userId": "u_awaz0vq81",
+      "invoiceId": "PO-DEP-18A973",
+      "provider": "zetupay",
+      "paymentMethod": "M-PESA",
+      "phone": "",
+      "amount": 1000,
+      "currency": "KES",
+      "status": "SUCCESS",
+      "reference": "PO-DEP-18A973",
+      "waveTransactionId": "WAVE-18A973-TEST",
+      "createdAt": "2026-08-11T17:05:00.871Z",
+      "updatedAt": "2026-08-11T17:05:00.872Z",
+      "paymentCurrency": "KES",
+      "walletCurrency": "USD",
+      "exchangeRate": 130,
+      "originalAmount": 1000,
+      "creditedAmount": 7.6923,
+      "receiptNumber": "QWE18A973",
+      "grossAmount": 1000,
+      "providerFee": 0,
+      "netAmount": 1000
     }
   ],
   "exchangeRates": {

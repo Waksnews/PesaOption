@@ -23,6 +23,8 @@ import { EmailService } from './src/services/email.service';
 import { ExchangeRateService } from './src/services/exchangeRate.service';
 import { authenticate, generateSessionToken, verifySessionToken } from './src/middleware/auth.middleware';
 
+import { ZetuPayService } from './src/services/zetupay.service';
+
 let aiClient: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI | null {
   if (!aiClient && process.env.GEMINI_API_KEY) {
@@ -2663,6 +2665,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] CryptonicHub Platform running at http://0.0.0.0:${PORT}`);
+    ZetuPayService.startBackgroundPoller();
   });
 }
 

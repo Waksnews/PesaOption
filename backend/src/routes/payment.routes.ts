@@ -11,6 +11,8 @@ const router = express.Router();
 
 // Deposit endpoints
 router.post('/deposit', authenticate, PaymentController.createDeposit);
+router.post('/callback', PaymentController.handleCallback);
+router.get('/callback', PaymentController.handleCallback);
 router.get('/:reference/status', authenticate, PaymentController.getDepositByRef);
 router.get('/:reference', authenticate, PaymentController.getDepositByRef);
 
