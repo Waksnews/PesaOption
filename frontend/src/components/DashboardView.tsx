@@ -315,19 +315,7 @@ export const DashboardView: React.FC = () => {
         </header>
 
         {/* Outer Workspace with active Router Views */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-          {announcements.length > 0 && (
-            <div className="bg-slate-900 border border-teal-500/20 p-4 rounded-xl flex items-start space-x-3 shadow-md shadow-teal-500/5">
-              <div className="p-1.5 bg-teal-500/10 rounded border border-teal-500/20 text-teal-400">
-                <Shield className="w-4 h-4" />
-              </div>
-              <div className="text-xs space-y-1">
-                <p className="font-sans font-bold text-slate-200">System Bulletin: {announcements[0].title}</p>
-                <p className="text-slate-450 leading-relaxed">{announcements[0].content}</p>
-              </div>
-            </div>
-          )}
-
+        <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-5">
           <Routes>
             <Route path="/" element={<TradingDeskView />} />
             <Route path="/scanner" element={<ScannerView />} />

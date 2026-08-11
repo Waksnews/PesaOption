@@ -5,7 +5,7 @@
 
 import axios from 'axios';
 import crypto, { randomUUID } from 'crypto';
-import { Database } from '../../server/db';
+import { Database, getPrismaClient } from '../../server/db';
 import { PaymentTransaction, Transaction } from '../types';
 import { formatZetuPayPhone, generateDepositReference, mapZetuPayStatus } from '../utils/zetupay';
 import { ExchangeRateService } from './exchangeRate.service';
@@ -423,6 +423,69 @@ export class ZetuPayService {
       read: false,
       createdAt: new Date().toISOString(),
     });
+
+    const prisma = getPrismaClient();
+    if (prisma) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.paymentTransaction.update({
+            where: { id: paymentTx.id },
+            data: {
+              status: 'Completed',
+              waveTransactionId: paymentTx.waveTransactionId || null,
+              receiptNumber: paymentTx.receiptNumber || null,
+              grossAmount: paymentTx.grossAmount || null,
+              providerFee: paymentTx.providerFee || null,
+              netAmount: paymentTx.netAmount || null,
+            }
+          });
+
+          await tx.wallet.update({
+            where: { id: wallet.id },
+            data: {
+              balance: { increment: creditedUsd }
+            }
+          });
+
+          await tx.transaction.create({
+            data: {
+              id: txId,
+              userId,
+              walletId: wallet.id,
+              type: 'deposit',
+              asset: 'USD',
+              amount: creditedUsd,
+              status: 'completed',
+              txHash: platformTx.txHash,
+              description: platformTx.description
+            }
+          });
+
+          await tx.notification.create({
+            data: {
+              id: 'not_' + Math.random().toString(36).substring(2, 11),
+              userId,
+              title: 'Deposit Received',
+              message: `Deposit received. KES ${depositAmountKes.toLocaleString()} ($${creditedUsd.toFixed(2)} USD) credited to your real wallet.`,
+              read: false
+            }
+          });
+
+          await tx.activityLog.create({
+            data: {
+              id: 'log_' + Math.random().toString(36).substring(2, 11),
+              userId,
+              action: 'ZetuPay Deposit Credited',
+              details: `Credited $${creditedUsd.toFixed(2)} USD via ZetuPay M-Pesa (Ref: ${paymentTx.reference}, Receipt: ${paymentTx.receiptNumber || 'N/A'})`,
+              ipAddress: 'ZetuPay Webhook Gateway'
+            }
+          });
+        });
+        console.log(`[ZETUPAY] PostgreSQL transaction completed successfully for user ${userId}. Credited $${creditedUsd.toFixed(2)} USD.`);
+      } catch (err) {
+        console.error('[ZETUPAY] PostgreSQL transaction error during payment processing:', err);
+      }
+    }
 
     await db.save();
 

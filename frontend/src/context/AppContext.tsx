@@ -82,6 +82,10 @@ interface AppContextType {
     reason: string;
     asset?: string;
   }) => Promise<{ success: boolean; refId?: string; error?: string }>;
+  adminCreditWallet: (userId: string, amount: number, reason: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  adminDebitWallet: (userId: string, amount: number, reason: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  adminResetWallet: (userId: string, resetRealBalance: boolean, resetDemoBalance: boolean) => Promise<{ success: boolean; message?: string; error?: string }>;
+  adminSearchWallets: (query?: string) => Promise<(User & { wallets: Wallet[]; phoneNumber?: string })[]>;
   adminApproveWithdrawal: (id: string) => Promise<boolean>;
   adminRejectWithdrawal: (id: string, remarks?: string) => Promise<boolean>;
 
@@ -692,6 +696,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const adminCreditWallet = async (userId: string, amount: number, reason: string) => {
+    try {
+      const res = await callApi(`/api/admin/wallets/${userId}/credit`, {
+        method: 'POST',
+        body: JSON.stringify({ amount, reason })
+      });
+      await fetchAdminData();
+      await refreshUserData();
+      return { success: true, message: res.message };
+    } catch (e: any) {
+      setError(e.message);
+      return { success: false, error: e.message || 'Credit failed.' };
+    }
+  };
+
+  const adminDebitWallet = async (userId: string, amount: number, reason: string) => {
+    try {
+      const res = await callApi(`/api/admin/wallets/${userId}/debit`, {
+        method: 'POST',
+        body: JSON.stringify({ amount, reason })
+      });
+      await fetchAdminData();
+      await refreshUserData();
+      return { success: true, message: res.message };
+    } catch (e: any) {
+      setError(e.message);
+      return { success: false, error: e.message || 'Debit failed.' };
+    }
+  };
+
+  const adminResetWallet = async (userId: string, resetRealBalance: boolean, resetDemoBalance: boolean) => {
+    try {
+      const res = await callApi(`/api/admin/wallets/${userId}/reset`, {
+        method: 'POST',
+        body: JSON.stringify({ resetRealBalance, resetDemoBalance })
+      });
+      await fetchAdminData();
+      await refreshUserData();
+      return { success: true, message: res.message };
+    } catch (e: any) {
+      setError(e.message);
+      return { success: false, error: e.message || 'Reset failed.' };
+    }
+  };
+
+  const adminSearchWallets = async (query?: string) => {
+    try {
+      const url = query ? `/api/admin/wallets/users?q=${encodeURIComponent(query)}` : '/api/admin/wallets/users';
+      const users = await callApi(url);
+      return users;
+    } catch (e: any) {
+      console.error('adminSearchWallets error:', e);
+      return [];
+    }
+  };
+
   const adminApproveWithdrawal = async (id: string): Promise<boolean> => {
     try {
       await callApi(`/api/admin/withdrawals/${id}/approve`, { method: 'POST' });
@@ -723,7 +783,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       user, token, prices, wallets, transactions, openPositions, closedTrades, supportTickets, notifications, announcements, loading, error, adminData,
       login, register, logout, updateProfile, changePassword, depositFunds, withdrawFunds, openTrade, closeTrade, createTicket, replyTicket, refreshUserData, markNotificationsRead,
-      fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminApproveWithdrawal, adminRejectWithdrawal,
+      fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminCreditWallet, adminDebitWallet, adminResetWallet, adminSearchWallets, adminApproveWithdrawal, adminRejectWithdrawal,
       ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
     }}>
       {children}

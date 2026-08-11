@@ -373,21 +373,21 @@ export const DepositModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Amount Field with Dynamic Minimum Deposit Enforcement */}
+              {/* Amount Field with Dynamic Minimum Deposit Enforcement (KES ONLY) */}
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] uppercase font-mono text-slate-500 block font-bold">
-                    Deposit Amount ({currency})
+                    Deposit Amount (KES)
                   </label>
                   <span className="text-[10px] font-mono text-slate-400 font-bold">
-                    Min: {currency} {minRequired}
+                    Min: KES {minSettings.minimumDepositKES}
                   </span>
                 </div>
                 <div className="relative">
                   <input 
                     type="number" 
                     step="any"
-                    placeholder={`e.g. ${minRequired}`}
+                    placeholder={`e.g. ${minSettings.minimumDepositKES}`}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     className={`w-full bg-slate-950 border rounded-2xl px-4 py-3.5 text-sm font-mono font-bold text-slate-100 focus:outline-none ${
@@ -397,28 +397,28 @@ export const DepositModal: React.FC = () => {
                     }`}
                     required
                   />
-                  <span className="absolute right-4 top-3.5 text-xs font-mono font-bold text-slate-500">{currency}</span>
+                  <span className="absolute right-4 top-3.5 text-xs font-mono font-bold text-slate-500">KES</span>
                 </div>
                 
                 {/* Minimum Deposit Validation Error Message */}
                 {isAmountBelowMin && (
                   <p className="text-[11px] font-mono font-bold text-rose-400 pt-0.5 flex items-center space-x-1">
                     <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>Minimum deposit is {currency} {minRequired}.</span>
+                    <span>Minimum deposit is KES {minSettings.minimumDepositKES}.</span>
                   </p>
                 )}
                 
                 {/* Dynamic Conversion Details */}
-                {amountNum >= minRequired && (
+                {amountNum >= minSettings.minimumDepositKES && (
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-1.5 text-[10px] font-mono mt-1">
                     <div className="flex justify-between text-slate-400">
                       <span>ZetuPay KES Charge:</span>
-                      <span className="font-bold text-emerald-400">KES {stkAmountInKes.toLocaleString()}</span>
+                      <span className="font-bold text-emerald-400">KES {amountNum.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-slate-450">
-                      <span>Credited to Trading Wallet:</span>
+                      <span>Credited Real USD Balance:</span>
                       <span className="font-bold text-teal-400">
-                        ${creditedAmountInUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        ${(amountNum / (rate || 130)).toFixed(2)} USD
                       </span>
                     </div>
                   </div>

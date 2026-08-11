@@ -21,7 +21,8 @@ export const AdminView: React.FC = () => {
   const { 
     user, adminData, fetchAdminData, adminAdjustWallet, adminChangeRole, adminCreateAnnouncement, adminDeleteAnnouncement,
     ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig,
-    adminApproveWithdrawal, adminRejectWithdrawal
+    adminApproveWithdrawal, adminRejectWithdrawal,
+    adminCreditWallet, adminDebitWallet, adminResetWallet, adminSearchWallets
   } = useApp();
   const { addToast } = useNotificationStore();
   const { currency } = useSettingsStore();
@@ -170,6 +171,133 @@ export const AdminView: React.FC = () => {
   const [annTitle, setAnnTitle] = useState<string>('');
   const [annContent, setAnnContent] = useState<string>('');
   const [annType, setAnnType] = useState<'info' | 'warning' | 'success'>('info');
+
+  // Dedicated Admin Wallet Management Module State
+  const [walletSearchTerm, setWalletSearchTerm] = useState<string>('');
+  const [walletUsersList, setWalletUsersList] = useState<any[]>([]);
+  const [isSearchingWallets, setIsSearchingWallets] = useState<boolean>(false);
+  const [selectedManageUser, setSelectedManageUser] = useState<any | null>(null);
+
+  // Manage Modal Tab & Form State
+  const [manageModalTab, setManageModalTab] = useState<'credit' | 'debit' | 'reset'>('credit');
+  const [modalCreditAmount, setModalCreditAmount] = useState<string>('100');
+  const [modalCreditReason, setModalCreditReason] = useState<string>('Manual admin bonus');
+
+  const [modalDebitAmount, setModalDebitAmount] = useState<string>('50');
+  const [modalDebitReason, setModalDebitReason] = useState<string>('Correction');
+
+  const [modalResetReal, setModalResetReal] = useState<boolean>(true);
+  const [modalResetDemo, setModalResetDemo] = useState<boolean>(false);
+
+  // Confirmation dialogs
+  const [debitConfirmModal, setDebitConfirmModal] = useState<boolean>(false);
+  const [resetConfirmModal, setResetConfirmModal] = useState<boolean>(false);
+  const [isModalSubmitting, setIsModalSubmitting] = useState<boolean>(false);
+
+  const handleFetchWalletUsers = async (term?: string) => {
+    setIsSearchingWallets(true);
+    try {
+      const results = await adminSearchWallets(term !== undefined ? term : walletSearchTerm);
+      setWalletUsersList(results && results.length > 0 ? results : (adminData.users || []));
+    } catch (e) {
+      console.error('Fetch wallet users error:', e);
+      setWalletUsersList(adminData.users || []);
+    } finally {
+      setIsSearchingWallets(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'wallet') {
+      handleFetchWalletUsers(walletSearchTerm);
+    }
+  }, [activeTab]);
+
+  const handleModalCredit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManageUser) return;
+    const amt = parseFloat(modalCreditAmount);
+    if (isNaN(amt) || amt <= 0) {
+      addToast('Validation Error', 'Please enter a valid positive credit amount.', 'error');
+      return;
+    }
+    if (!modalCreditReason.trim()) {
+      addToast('Validation Error', 'Please enter a reason for crediting.', 'error');
+      return;
+    }
+    setIsModalSubmitting(true);
+    const res = await adminCreditWallet(selectedManageUser.id, amt, modalCreditReason.trim());
+    setIsModalSubmitting(false);
+    if (res.success) {
+      addToast('Wallet Credited', res.message || `Successfully credited $${amt} to ${selectedManageUser.fullName}.`, 'success');
+      await handleFetchWalletUsers();
+      setSelectedManageUser(null);
+    } else {
+      addToast('Credit Failed', res.error || 'Failed to credit wallet.', 'error');
+    }
+  };
+
+  const handleModalDebitInitiate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManageUser) return;
+    const amt = parseFloat(modalDebitAmount);
+    if (isNaN(amt) || amt <= 0) {
+      addToast('Validation Error', 'Please enter a valid positive debit amount.', 'error');
+      return;
+    }
+    if (!modalDebitReason.trim()) {
+      addToast('Validation Error', 'Please enter a reason for debiting.', 'error');
+      return;
+    }
+    const usdW = selectedManageUser.wallets?.find((w: any) => w.asset === 'USD');
+    const curBal = usdW ? Number(usdW.balance) : 0;
+    if (amt > curBal) {
+      addToast('Debit Error', `Cannot debit $${amt}. User's current Real Balance is $${curBal.toLocaleString('en-US', { minimumFractionDigits: 2 })}.`, 'error');
+      return;
+    }
+    setDebitConfirmModal(true);
+  };
+
+  const handleModalDebitExecute = async () => {
+    if (!selectedManageUser) return;
+    const amt = parseFloat(modalDebitAmount);
+    setIsModalSubmitting(true);
+    const res = await adminDebitWallet(selectedManageUser.id, amt, modalDebitReason.trim());
+    setIsModalSubmitting(false);
+    setDebitConfirmModal(false);
+    if (res.success) {
+      addToast('Wallet Debited', res.message || `Successfully debited $${amt} from ${selectedManageUser.fullName}.`, 'success');
+      await handleFetchWalletUsers();
+      setSelectedManageUser(null);
+    } else {
+      addToast('Debit Failed', res.error || 'Failed to debit wallet.', 'error');
+    }
+  };
+
+  const handleModalResetInitiate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManageUser) return;
+    if (!modalResetReal && !modalResetDemo) {
+      addToast('Validation Error', 'Please select at least one balance to reset.', 'error');
+      return;
+    }
+    setResetConfirmModal(true);
+  };
+
+  const handleModalResetExecute = async () => {
+    if (!selectedManageUser) return;
+    setIsModalSubmitting(true);
+    const res = await adminResetWallet(selectedManageUser.id, modalResetReal, modalResetDemo);
+    setIsModalSubmitting(false);
+    setResetConfirmModal(false);
+    if (res.success) {
+      addToast('Wallet Reset', res.message || `Successfully reset wallet balances for ${selectedManageUser.fullName}.`, 'success');
+      await handleFetchWalletUsers();
+      setSelectedManageUser(null);
+    } else {
+      addToast('Reset Failed', res.error || 'Failed to reset wallet.', 'error');
+    }
+  };
 
   useEffect(() => {
     fetchAdminData();
@@ -1211,8 +1339,149 @@ export const AdminView: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === 'wallet' && (
         <div className="space-y-6">
-          
-          {/* Section 1: Admin Self Wallet Quick Actions */}
+
+          {/* SECTION 1: SEARCH & WALLET MANAGEMENT TABLE */}
+          <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-5">
+            <div className="flex flex-wrap justify-between items-center gap-3 pb-3 border-b border-slate-850">
+              <div>
+                <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide flex items-center space-x-2">
+                  <Wallet className="w-5 h-5 text-teal-400" />
+                  <span>Wallet Management & User Balances</span>
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Search registered users by email, full name, phone number, or user ID to manage real & demo balances.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => handleFetchWalletUsers('')}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-300 text-xs font-mono font-bold flex items-center space-x-1.5 transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSearchingWallets ? 'animate-spin text-teal-400' : ''}`} />
+                  <span>Refresh List</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Search Input Bar */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <input
+                  type="text"
+                  placeholder="Search users by email, name, phone, or user ID..."
+                  value={walletSearchTerm}
+                  onChange={(e) => {
+                    setWalletSearchTerm(e.target.value);
+                    handleFetchWalletUsers(e.target.value);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-10 pr-4 py-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-teal-500/50"
+                />
+                {walletSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWalletSearchTerm('');
+                      handleFetchWalletUsers('');
+                    }}
+                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 text-xs font-bold"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleFetchWalletUsers(walletSearchTerm)}
+                className="px-5 py-2.5 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 font-bold rounded-xl text-xs flex items-center space-x-2 transition cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search</span>
+              </button>
+            </div>
+
+            {/* Users Table */}
+            <div className="overflow-x-auto rounded-xl border border-slate-850">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-950 border-b border-slate-850 text-slate-500 font-mono text-[10px] uppercase">
+                    <th className="py-3 px-4">User Name</th>
+                    <th className="py-3 px-4">Email</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">User ID</th>
+                    <th className="py-3 px-4">USD Real Balance</th>
+                    <th className="py-3 px-4">Wallet Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900 text-slate-200 font-sans text-xs">
+                  {walletUsersList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                        {isSearchingWallets ? 'Searching user database...' : 'No matching users found.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    walletUsersList.map((u: any) => {
+                      const usdWallet = u.wallets?.find((w: any) => w.asset === 'USD');
+                      const realBalance = usdWallet ? Number(usdWallet.balance) : 0;
+
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-900/50 transition">
+                          <td className="py-3.5 px-4 font-semibold text-slate-100 flex items-center space-x-2.5">
+                            <div className="w-7 h-7 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-400 font-bold flex items-center justify-center text-[10px] uppercase">
+                              {u.fullName?.charAt(0) || u.email?.charAt(0) || 'U'}
+                            </div>
+                            <span className="truncate max-w-[140px]">{u.fullName || 'User'}</span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">
+                            {u.email}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                              u.role === 'owner' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                              u.role === 'admin' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                              'bg-slate-800 text-slate-400'
+                            }`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-500 text-[10px]">
+                            {u.id}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-black text-emerald-400 text-sm">
+                            ${realBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-mono font-bold uppercase rounded flex items-center space-x-1 w-max">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Active</span>
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedManageUser(u);
+                                setManageModalTab('credit');
+                              }}
+                              className="px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 font-bold rounded-lg text-xs transition cursor-pointer"
+                            >
+                              Manage Wallet
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* SECTION 2: ADMIN SELF WALLET QUICK ACTIONS */}
           <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-4">
             <div className="flex justify-between items-center pb-3 border-b border-slate-850">
               <div className="flex items-center space-x-2">
@@ -1222,12 +1491,11 @@ export const AdminView: React.FC = () => {
                 </h2>
               </div>
               <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">
-                Instant Internal Ledger Operations (No Payment API)
+                Instant Treasury Operations
               </span>
             </div>
 
             <div className="grid md:grid-cols-3 gap-4">
-              {/* Admin Balance Display */}
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 flex flex-col justify-between space-y-2">
                 <div>
                   <span className="text-[10px] font-mono text-slate-500 uppercase font-bold">Admin Active Wallet</span>
@@ -1242,7 +1510,6 @@ export const AdminView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Self Action Form */}
               <div className="md:col-span-2 space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-850">
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
@@ -1276,7 +1543,7 @@ export const AdminView: React.FC = () => {
                     type="button"
                     disabled={isSelfSubmitting}
                     onClick={() => handleSelfAdjustment('credit')}
-                    className="flex-1 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer"
+                    className="flex-1 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer text-xs"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
                     <span>Credit Admin Wallet</span>
@@ -1286,7 +1553,7 @@ export const AdminView: React.FC = () => {
                     type="button"
                     disabled={isSelfSubmitting}
                     onClick={() => handleSelfAdjustment('debit')}
-                    className="flex-1 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer"
+                    className="flex-1 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer text-xs"
                   >
                     <MinusCircle className="w-3.5 h-3.5" />
                     <span>Debit Admin Wallet</span>
@@ -1296,220 +1563,17 @@ export const AdminView: React.FC = () => {
                     type="button"
                     disabled={isSelfSubmitting}
                     onClick={() => handleSelfAdjustment('reset')}
-                    className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer"
+                    className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold rounded-lg flex items-center justify-center space-x-1.5 transition cursor-pointer text-xs"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reset Balance ($0)</span>
+                    <span>Reset ($0)</span>
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Section 2: Registered User Wallet Adjustments */}
-          <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-5">
-            <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-slate-850">
-              <div>
-                <h2 className="text-sm font-black text-slate-100 uppercase tracking-wide flex items-center space-x-2">
-                  <Users className="w-4 h-4 text-teal-400" />
-                  <span>Credit / Debit Registered User Wallet</span>
-                </h2>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Select any user account to issue manual credit, debit, or reset balance instantly.
-                </p>
-              </div>
-
-              {lastRefId && (
-                <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-[10px] font-mono font-bold flex items-center space-x-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Last Adjustment Ref: {lastRefId}</span>
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={handleUserAdjustment} className="space-y-5">
-              
-              {/* Target User Selector */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block">
-                    1. Search & Select Target User ({registeredUsers.length} Users Registered)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Filter users by name or email..."
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-teal-500/40"
-                    />
-                    <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                  </div>
-
-                  <select
-                    value={selectedUserId || (registeredUsers[0]?.id || '')}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:border-teal-500/40 font-mono"
-                  >
-                    {filteredUsers.length === 0 ? (
-                      <option value="">No matching users found</option>
-                    ) : (
-                      filteredUsers.map(u => {
-                        const usdW = u.wallets?.find(w => w.asset === 'USD');
-                        const bal = usdW ? usdW.balance : 0;
-                        return (
-                          <option key={u.id} value={u.id}>
-                            {u.fullName} ({u.email}) — Balance: ${bal.toLocaleString()} [{u.role.toUpperCase()}]
-                          </option>
-                        );
-                      })
-                    )}
-                  </select>
-                </div>
-
-                {/* Selected User Overview Card */}
-                {selectedTargetUser && (
-                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 flex items-start space-x-3">
-                    <img
-                      src={selectedTargetUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
-                      alt={selectedTargetUser.fullName}
-                      className="w-12 h-12 rounded-full border border-slate-800 object-cover flex-shrink-0"
-                    />
-                    <div className="space-y-1 overflow-hidden flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-100 text-xs truncate">{selectedTargetUser.fullName}</span>
-                        <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase ${
-                          selectedTargetUser.role === 'admin' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {selectedTargetUser.role}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-mono text-slate-400 truncate">{selectedTargetUser.email}</p>
-                      <div className="flex items-center space-x-3 pt-1 font-mono text-[10px]">
-                        <span className="text-slate-500">Real Balance: <strong className="text-emerald-400">${selectedUserWallet ? selectedUserWallet.balance.toLocaleString() : '0'}</strong></span>
-                        <span className="text-slate-500">Ref Code: <strong className="text-teal-400">{selectedTargetUser.referralCode}</strong></span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Type & Input Parameters */}
-              <div className="bg-slate-950 p-5 rounded-xl border border-slate-850 space-y-4">
-                <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block">
-                  2. Select Adjustment Type & Amounts
-                </label>
-
-                <div className="grid sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActionType('credit')}
-                    className={`p-3 rounded-xl border font-bold text-xs flex items-center justify-center space-x-2 transition cursor-pointer ${
-                      actionType === 'credit'
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-md shadow-emerald-500/10'
-                        : 'bg-[#090D1A] border-slate-850 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>Admin Credit (+)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActionType('debit')}
-                    className={`p-3 rounded-xl border font-bold text-xs flex items-center justify-center space-x-2 transition cursor-pointer ${
-                      actionType === 'debit'
-                        ? 'bg-rose-500/15 border-rose-500/50 text-rose-400 shadow-md shadow-rose-500/10'
-                        : 'bg-[#090D1A] border-slate-850 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <MinusCircle className="w-4 h-4" />
-                    <span>Admin Debit (-)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActionType('reset')}
-                    className={`p-3 rounded-xl border font-bold text-xs flex items-center justify-center space-x-2 transition cursor-pointer ${
-                      actionType === 'reset'
-                        ? 'bg-amber-500/15 border-amber-500/50 text-amber-400 shadow-md shadow-amber-500/10'
-                        : 'bg-[#090D1A] border-slate-850 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Reset Balance (🔄)</span>
-                  </button>
-                </div>
-
-                <div className="grid md:grid-cols-3 gap-4 pt-2">
-                  <div>
-                    <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
-                      {actionType === 'reset' ? 'Target Balance ($)' : 'Amount ($)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={amountInput}
-                      onChange={(e) => setAmountInput(e.target.value)}
-                      placeholder="e.g. 500.00"
-                      className="w-full bg-[#090D1A] border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-teal-500/40"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
-                      Asset Wallet
-                    </label>
-                    <select
-                      value={assetInput}
-                      onChange={(e) => setAssetInput(e.target.value)}
-                      className="w-full bg-[#090D1A] border border-slate-850 text-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-teal-500/40"
-                    >
-                      <option value="USD">USD (Primary Balance)</option>
-                      <option value="BTC">BTC (Bitcoin)</option>
-                      <option value="ETH">ETH (Ethereum)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
-                      Reason / Reference Note (Required)
-                    </label>
-                    <input
-                      type="text"
-                      value={reasonInput}
-                      onChange={(e) => setReasonInput(e.target.value)}
-                      placeholder="e.g. Compensation bonus, Account audit..."
-                      className="w-full bg-[#090D1A] border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-teal-500/40"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Submit Action */}
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !selectedTargetUser}
-                  className={`px-6 py-3 rounded-xl font-bold uppercase text-xs flex items-center space-x-2 transition cursor-pointer shadow-xl ${
-                    actionType === 'credit'
-                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 font-black'
-                      : actionType === 'debit'
-                      ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-slate-100 font-black'
-                      : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-slate-950 font-black'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>
-                    {isSubmitting ? 'Processing Ledger...' : `Execute Manual ${actionType.toUpperCase()}`}
-                  </span>
-                </button>
-              </div>
-
-            </form>
-          </div>
-
-          {/* Section 3: Manual Admin Transactions Audit Ledger Table */}
+          {/* SECTION 3: MANUAL ADMIN TRANSACTIONS AUDIT LEDGER */}
           <div className="bg-[#090D1A] border border-slate-850 rounded-2xl p-6 shadow-xl space-y-4">
             <div className="flex justify-between items-center pb-3 border-b border-slate-850">
               <div>
@@ -1518,7 +1582,7 @@ export const AdminView: React.FC = () => {
                   <span>Manual Admin Adjustment Ledger Logs</span>
                 </h3>
                 <p className="text-[10px] text-slate-500 mt-0.5">
-                  Every manual credit or debit generates an immutable record with reference ID, timestamp, and reason.
+                  Every manual credit, debit, or reset generates an immutable record.
                 </p>
               </div>
 
@@ -1530,7 +1594,6 @@ export const AdminView: React.FC = () => {
             {adminManualTxs.length === 0 ? (
               <div className="py-12 text-center text-slate-500 font-sans space-y-1">
                 <p className="text-xs">No manual admin adjustments performed yet.</p>
-                <p className="text-[10px] text-slate-600">Use the form above to issue instant credits or debits.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1555,7 +1618,7 @@ export const AdminView: React.FC = () => {
                             {tx.txHash || tx.id}
                           </td>
                           <td className="font-semibold text-slate-200">
-                            <div>{tx.userFullName}</div>
+                            <div>{tx.userFullName || tx.userId}</div>
                             <div className="text-[10px] font-mono text-slate-500">{tx.userEmail}</div>
                           </td>
                           <td>
@@ -1587,6 +1650,286 @@ export const AdminView: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* ========================================================================= */}
+          {/* WALLET MANAGEMENT MODAL */}
+          {/* ========================================================================= */}
+          {selectedManageUser && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-[#090D1A] border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden space-y-0">
+                
+                {/* Modal Header */}
+                <div className="p-5 border-b border-slate-850 flex justify-between items-center bg-slate-950">
+                  <div>
+                    <h3 className="font-black text-slate-100 text-sm uppercase tracking-wide flex items-center space-x-2">
+                      <Wallet className="w-4 h-4 text-teal-400" />
+                      <span>Manage Wallet — {selectedManageUser.fullName}</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5">{selectedManageUser.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedManageUser(null)}
+                    className="p-1 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-850 transition"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* User Wallet Info Banner */}
+                <div className="p-5 bg-slate-900/60 border-b border-slate-850 grid grid-cols-2 gap-4 font-mono text-xs">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-850">
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block">USD Real Balance</span>
+                    <p className="text-lg font-black text-emerald-400 mt-1">
+                      ${(selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-850">
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block">USD Demo Balance</span>
+                    <p className="text-lg font-black text-teal-400 mt-1">
+                      ${(selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.demoBalance || 5000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tab switcher */}
+                <div className="flex border-b border-slate-850 bg-slate-950 text-xs font-bold uppercase">
+                  <button
+                    type="button"
+                    onClick={() => setManageModalTab('credit')}
+                    className={`flex-1 py-3 border-b-2 text-center transition cursor-pointer ${
+                      manageModalTab === 'credit'
+                        ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+                        : 'border-transparent text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Credit Wallet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManageModalTab('debit')}
+                    className={`flex-1 py-3 border-b-2 text-center transition cursor-pointer ${
+                      manageModalTab === 'debit'
+                        ? 'border-rose-500 text-rose-400 bg-rose-500/10'
+                        : 'border-transparent text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Debit Wallet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManageModalTab('reset')}
+                    className={`flex-1 py-3 border-b-2 text-center transition cursor-pointer ${
+                      manageModalTab === 'reset'
+                        ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+                        : 'border-transparent text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Reset Wallet
+                  </button>
+                </div>
+
+                {/* Tab 1: Credit Wallet */}
+                {manageModalTab === 'credit' && (
+                  <form onSubmit={handleModalCredit} className="p-5 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
+                        Credit Amount ($)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={modalCreditAmount}
+                        onChange={(e) => setModalCreditAmount(e.target.value)}
+                        placeholder="e.g. 100.00"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
+                        Reason / Description (Required)
+                      </label>
+                      <input
+                        type="text"
+                        value={modalCreditReason}
+                        onChange={(e) => setModalCreditReason(e.target.value)}
+                        placeholder="e.g. Promotional Bonus"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isModalSubmitting}
+                      className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 font-black rounded-xl text-xs uppercase transition shadow-lg cursor-pointer"
+                    >
+                      {isModalSubmitting ? 'Crediting Wallet...' : 'Execute Credit Wallet'}
+                    </button>
+                  </form>
+                )}
+
+                {/* Tab 2: Debit Wallet */}
+                {manageModalTab === 'debit' && (
+                  <form onSubmit={handleModalDebitInitiate} className="p-5 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
+                        Debit Amount ($)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={modalDebitAmount}
+                        onChange={(e) => setModalDebitAmount(e.target.value)}
+                        placeholder="e.g. 50.00"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-rose-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-400 font-bold uppercase block mb-1">
+                        Reason / Description (Required)
+                      </label>
+                      <input
+                        type="text"
+                        value={modalDebitReason}
+                        onChange={(e) => setModalDebitReason(e.target.value)}
+                        placeholder="e.g. Balance Correction"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-100 focus:outline-none focus:border-rose-500/50"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isModalSubmitting}
+                      className="w-full py-3 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-slate-100 font-black rounded-xl text-xs uppercase transition shadow-lg cursor-pointer"
+                    >
+                      Proceed to Debit Confirmation
+                    </button>
+                  </form>
+                )}
+
+                {/* Tab 3: Reset Wallet */}
+                {manageModalTab === 'reset' && (
+                  <form onSubmit={handleModalResetInitiate} className="p-5 space-y-4">
+                    <p className="text-xs text-slate-400">Select which balances to reset for {selectedManageUser.fullName}:</p>
+                    <div className="space-y-3 font-mono text-xs">
+                      <label className="flex items-center space-x-3 p-3 bg-slate-950 rounded-xl border border-slate-850 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={modalResetReal}
+                          onChange={(e) => setModalResetReal(e.target.checked)}
+                          className="w-4 h-4 text-amber-500 rounded border-slate-800"
+                        />
+                        <div>
+                          <span className="font-bold text-slate-200 block">Reset USD Real Balance</span>
+                          <span className="text-[10px] text-slate-500">Sets Real Balance to $0.00</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-center space-x-3 p-3 bg-slate-950 rounded-xl border border-slate-850 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={modalResetDemo}
+                          onChange={(e) => setModalResetDemo(e.target.checked)}
+                          className="w-4 h-4 text-amber-500 rounded border-slate-800"
+                        />
+                        <div>
+                          <span className="font-bold text-slate-200 block">Reset USD Demo Balance</span>
+                          <span className="text-[10px] text-slate-500">Resets Demo Balance to $5,000.00</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isModalSubmitting}
+                      className="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-slate-950 font-black rounded-xl text-xs uppercase transition shadow-lg cursor-pointer"
+                    >
+                      Proceed to Reset Confirmation
+                    </button>
+                  </form>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {/* DEBIT CONFIRMATION MODAL */}
+          {debitConfirmModal && selectedManageUser && (
+            <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-[#090D1A] border border-rose-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                <div className="flex items-center space-x-3 text-rose-400">
+                  <AlertCircle className="w-6 h-6 flex-shrink-0" />
+                  <h3 className="font-black text-sm uppercase tracking-wide">Confirm Debit Operation</h3>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2 text-xs text-slate-300 font-mono">
+                  <div>User: <strong className="text-slate-100">{selectedManageUser.fullName}</strong></div>
+                  <div>Email: <span className="text-slate-400">{selectedManageUser.email}</span></div>
+                  <div>Current Real Balance: <strong className="text-emerald-400">${(selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.balance || 0).toLocaleString()}</strong></div>
+                  <div>Debit Amount: <strong className="text-rose-400">-${parseFloat(modalDebitAmount).toLocaleString()}</strong></div>
+                  <div>New Real Balance: <strong className="text-teal-400">${Math.max(0, (selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.balance || 0) - parseFloat(modalDebitAmount)).toLocaleString()}</strong></div>
+                  <div>Reason: <span className="text-slate-400">{modalDebitReason}</span></div>
+                </div>
+
+                <div className="flex space-x-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDebitConfirmModal(false)}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isModalSubmitting}
+                    onClick={handleModalDebitExecute}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-slate-100 rounded-xl text-xs font-black cursor-pointer uppercase shadow-lg"
+                  >
+                    {isModalSubmitting ? 'Debiting...' : 'Confirm Debit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* RESET CONFIRMATION MODAL */}
+          {resetConfirmModal && selectedManageUser && (
+            <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-[#090D1A] border border-amber-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                <div className="flex items-center space-x-3 text-amber-400">
+                  <AlertCircle className="w-6 h-6 flex-shrink-0" />
+                  <h3 className="font-black text-sm uppercase tracking-wide">Confirm Reset Operation</h3>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2 text-xs text-slate-300 font-mono">
+                  <div>User: <strong className="text-slate-100">{selectedManageUser.fullName}</strong></div>
+                  <div>Email: <span className="text-slate-400">{selectedManageUser.email}</span></div>
+                  {modalResetReal && (
+                    <div>Real Balance Reset: <span className="text-rose-400">Current ${selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.balance || 0} → New $0.00</span></div>
+                  )}
+                  {modalResetDemo && (
+                    <div>Demo Balance Reset: <span className="text-teal-400">Current ${selectedManageUser.wallets?.find((w: any) => w.asset === 'USD')?.demoBalance || 5000} → New $5,000.00</span></div>
+                  )}
+                </div>
+
+                <div className="flex space-x-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setResetConfirmModal(false)}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isModalSubmitting}
+                    onClick={handleModalResetExecute}
+                    className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-black cursor-pointer uppercase shadow-lg"
+                  >
+                    {isModalSubmitting ? 'Resetting...' : 'Confirm Reset'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       )}

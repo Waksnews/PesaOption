@@ -468,23 +468,69 @@ app.post('/api/auth/register', async (req, res) => {
 
   if (prisma) {
     try {
-      await prisma.user.create({
-        data: {
-          id: userId,
-          email: newUser.email,
-          passwordHash: newUser.passwordHash,
-          fullName: newUser.fullName,
-          role: assignedRole,
-          phoneNumber: newUser.phoneNumber || null,
-          referralCode: newUser.referralCode || null,
-          referredBy: newUser.referredBy || null,
-          avatarUrl: newUser.avatarUrl || null,
-          verified: true
+      await prisma.$transaction(async (tx) => {
+        // 1. Create User
+        await tx.user.create({
+          data: {
+            id: userId,
+            email: newUser.email,
+            passwordHash: newUser.passwordHash,
+            fullName: newUser.fullName,
+            role: assignedRole,
+            phoneNumber: newUser.phoneNumber || null,
+            referralCode: newUser.referralCode || '',
+            referredBy: newUser.referredBy || null,
+            avatarUrl: newUser.avatarUrl || null,
+            verified: true
+          }
+        });
+
+        // 2. Create Default Wallets (USD: 0 Real, 5000 Demo; BTC: 0/0; ETH: 0/0)
+        await tx.wallet.createMany({
+          data: [
+            { id: 'w_usd_' + userId, userId, asset: 'USD', balance: 0, demoBalance: 5000 },
+            { id: 'w_btc_' + userId, userId, asset: 'BTC', balance: 0, demoBalance: 0 },
+            { id: 'w_eth_' + userId, userId, asset: 'ETH', balance: 0, demoBalance: 0 }
+          ]
+        });
+
+        // 3. Handle Referral Earnings in DB if referred
+        if (referredByCode) {
+          const referrerDb = await tx.user.findFirst({ where: { referralCode: referredByCode } });
+          if (referrerDb) {
+            const refUsdWallet = await tx.wallet.findFirst({ where: { userId: referrerDb.id, asset: 'USD' } });
+            if (refUsdWallet) {
+              const newDemo = Math.min(5000, Number(refUsdWallet.demoBalance) + 500);
+              await tx.wallet.update({
+                where: { id: refUsdWallet.id },
+                data: { demoBalance: newDemo }
+              });
+            }
+
+            const myUsdWallet = await tx.wallet.findFirst({ where: { userId, asset: 'USD' } });
+            if (myUsdWallet) {
+              const newDemo = Math.min(5000, Number(myUsdWallet.demoBalance) + 100);
+              await tx.wallet.update({
+                where: { id: myUsdWallet.id },
+                data: { demoBalance: newDemo }
+              });
+            }
+
+            await tx.referralEarning.create({
+              data: {
+                id: 'ref_earn_' + Math.random().toString(36).substring(2, 11),
+                userId: referrerDb.id,
+                referrerId: userId,
+                amount: 500,
+                description: `Referral sign up bonus for inviting ${fullName}`
+              }
+            });
+          }
         }
       });
-      console.log(`[AUTH] User registration persisted to PostgreSQL: ${newUser.email}`);
+      console.log(`[AUTH] User registration transaction persisted to PostgreSQL: ${newUser.email}`);
     } catch (err) {
-      console.error('[AUTH] Registration PostgreSQL save error:', err);
+      console.error('[AUTH] Registration PostgreSQL transaction error:', err);
       return res.status(500).json({ error: 'Failed to persist new user to database.' });
     }
   }
@@ -811,20 +857,29 @@ app.post('/api/wallet/deposit', authenticate, (req: any, res) => {
 
   db.transactions.push(transaction);
 
-  if (isDemo) {
-    if (wallet.demoBalance >= 5000) {
-      return res.status(400).json({ error: 'Demo account balance is capped at maximum of $5,000.' });
-    }
-    if (wallet.demoBalance + valAmount > 5000) {
-      const maxAllowed = 5000 - wallet.demoBalance;
-      return res.status(400).json({ error: `Deposit exceeds maximum demo account limit of $5,000. Maximum topup allowed: $${maxAllowed.toFixed(2)}` });
-    }
-    wallet.demoBalance = Math.min(5000, wallet.demoBalance + valAmount);
-    createNotification(req.userId, 'Demo USD Credited', `Your USD demo wallet was topped up with $${valAmount.toLocaleString()}`);
-  } else {
-    // Simulated live credit in sandbox mode
-    wallet.balance += valAmount;
-    createNotification(req.userId, 'Sandbox Funds Credited', `Your live-simulated account was credited with $${valAmount.toLocaleString()}`);
+  if (!isDemo) {
+    return res.status(400).json({ 
+      error: 'Real wallet balance can ONLY be credited through verified deposits via the payment gateway (/api/payments/deposit).' 
+    });
+  }
+
+  if (wallet.demoBalance >= 5000) {
+    return res.status(400).json({ error: 'Demo account balance is capped at maximum of $5,000.' });
+  }
+  if (wallet.demoBalance + valAmount > 5000) {
+    const maxAllowed = 5000 - wallet.demoBalance;
+    return res.status(400).json({ error: `Deposit exceeds maximum demo account limit of $5,000. Maximum topup allowed: $${maxAllowed.toFixed(2)}` });
+  }
+  
+  wallet.demoBalance = Math.min(5000, wallet.demoBalance + valAmount);
+  createNotification(req.userId, 'Demo USD Credited', `Your USD demo wallet was topped up with $${valAmount.toLocaleString()}`);
+
+  const prisma = getPrismaClient();
+  if (prisma) {
+    prisma.wallet.update({
+      where: { id: wallet.id },
+      data: { demoBalance: wallet.demoBalance }
+    }).catch((err: any) => console.error('[DEMO TOPUP] PostgreSQL update error:', err));
   }
   
   db.save();
@@ -1508,6 +1563,513 @@ app.post('/api/admin/wallet/adjust', authenticate, requireAdmin, (req: any, res)
     refId,
     transaction,
     newBalance: wallet.balance
+  });
+});
+
+// ============================================================================
+// ADMIN WALLET MANAGEMENT MODULE ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/admin/wallets/users
+ * Search users and return wallet information.
+ * Query parameters: ?q=email or search by name, phone, user ID
+ */
+app.get('/api/admin/wallets/users', authenticate, requireAdmin, async (req: any, res) => {
+  const query = ((req.query.q as string) || '').trim().toLowerCase();
+  const prisma = getPrismaClient();
+
+  let users: any[] = [];
+
+  if (prisma) {
+    try {
+      const dbUsers = await prisma.user.findMany({
+        where: query
+          ? {
+              OR: [
+                { email: { contains: query, mode: 'insensitive' } },
+                { fullName: { contains: query, mode: 'insensitive' } },
+                { phoneNumber: { contains: query, mode: 'insensitive' } },
+                { id: { contains: query, mode: 'insensitive' } },
+              ],
+            }
+          : undefined,
+        include: {
+          wallets: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      users = dbUsers.map((u) => ({
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        phoneNumber: u.phoneNumber || '',
+        role: u.role,
+        verified: u.verified,
+        createdAt: toSafeISOString(u.createdAt),
+        wallets: u.wallets.map((w) => ({
+          id: w.id,
+          userId: w.userId,
+          asset: w.asset,
+          balance: Number(w.balance),
+          demoBalance: Number(w.demoBalance),
+          updatedAt: toSafeISOString(w.updatedAt),
+        })),
+      }));
+    } catch (err) {
+      console.error('[ADMIN WALLETS] Prisma search error:', err);
+    }
+  }
+
+  if (!users.length) {
+    let memUsers = db.users;
+    if (query) {
+      memUsers = memUsers.filter(
+        (u) =>
+          u.email.toLowerCase().includes(query) ||
+          u.fullName.toLowerCase().includes(query) ||
+          (u.phoneNumber && u.phoneNumber.toLowerCase().includes(query)) ||
+          u.id.toLowerCase().includes(query)
+      );
+    }
+    users = memUsers.map((u) => ({
+      id: u.id,
+      email: u.email,
+      fullName: u.fullName,
+      phoneNumber: u.phoneNumber || '',
+      role: u.role,
+      verified: u.verified,
+      createdAt: u.createdAt,
+      wallets: db.wallets.filter((w) => w.userId === u.id),
+    }));
+  }
+
+  res.json(users);
+});
+
+/**
+ * POST /api/admin/wallets/:userId/credit
+ * Body: { amount: 100, reason: "Manual bonus" }
+ * Effect: wallet.balance += amount
+ */
+app.post('/api/admin/wallets/:userId/credit', authenticate, requireAdmin, async (req: any, res) => {
+  const { userId } = req.params;
+  const { amount, reason } = req.body;
+
+  const valAmount = parseFloat(amount);
+  if (isNaN(valAmount) || valAmount <= 0) {
+    return res.status(400).json({ error: 'A valid positive amount is required.' });
+  }
+
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: 'Reason for wallet credit is required.' });
+  }
+
+  const targetUser = db.users.find((u) => u.id === userId);
+  if (req.userRole === 'admin' && targetUser?.role === 'owner') {
+    return res.status(403).json({ error: 'Admins cannot modify owner wallets.' });
+  }
+
+  const prisma = getPrismaClient();
+  const activeAsset = 'USD';
+  let updatedWallet: any = null;
+  let txRecord: any = null;
+
+  if (prisma) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        let wallet = await tx.wallet.findFirst({
+          where: { userId, asset: activeAsset },
+        });
+
+        if (!wallet) {
+          wallet = await tx.wallet.create({
+            data: {
+              userId,
+              asset: activeAsset,
+              balance: valAmount,
+              demoBalance: 5000,
+            },
+          });
+        } else {
+          wallet = await tx.wallet.update({
+            where: { id: wallet.id },
+            data: {
+              balance: { increment: valAmount },
+            },
+          });
+        }
+
+        updatedWallet = {
+          id: wallet.id,
+          userId: wallet.userId,
+          asset: wallet.asset,
+          balance: Number(wallet.balance),
+          demoBalance: Number(wallet.demoBalance),
+        };
+
+        const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
+        const refId = `ADM-CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        const createdTx = await tx.transaction.create({
+          data: {
+            id: txId,
+            userId,
+            walletId: wallet.id,
+            type: 'admin_credit',
+            asset: activeAsset,
+            amount: valAmount,
+            status: 'completed',
+            txHash: refId,
+            description: reason.trim(),
+          },
+        });
+
+        txRecord = {
+          id: createdTx.id,
+          userId: createdTx.userId,
+          walletId: createdTx.walletId,
+          type: createdTx.type,
+          asset: createdTx.asset,
+          amount: Number(createdTx.amount),
+          status: createdTx.status,
+          txHash: createdTx.txHash,
+          description: createdTx.description,
+          createdAt: toSafeISOString(createdTx.createdAt),
+        };
+
+        await tx.activityLog.create({
+          data: {
+            userId: req.userId,
+            action: 'ADMIN_WALLET_CREDIT',
+            ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1',
+            details: `Credited $${valAmount} to user ${userId}. Reason: ${reason.trim()}`,
+          },
+        });
+      });
+    } catch (err: any) {
+      console.error('[ADMIN CREDIT] Prisma error:', err);
+    }
+  }
+
+  // Update in-memory db fallback
+  let memWallet = db.wallets.find((w) => w.userId === userId && w.asset === activeAsset);
+  if (!memWallet) {
+    memWallet = {
+      id: `w_usd_${userId}`,
+      userId,
+      asset: activeAsset,
+      balance: valAmount,
+      demoBalance: 5000,
+      updatedAt: new Date().toISOString(),
+    };
+    db.wallets.push(memWallet);
+  } else {
+    if (!updatedWallet) {
+      memWallet.balance = Number((memWallet.balance + valAmount).toFixed(2));
+    } else {
+      memWallet.balance = updatedWallet.balance;
+    }
+    memWallet.updatedAt = new Date().toISOString();
+  }
+
+  if (!txRecord) {
+    const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
+    const refId = `ADM-CR-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    txRecord = {
+      id: txId,
+      userId,
+      walletId: memWallet.id,
+      type: 'admin_credit',
+      asset: activeAsset,
+      amount: valAmount,
+      status: 'completed',
+      txHash: refId,
+      description: reason.trim(),
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  db.transactions.push(txRecord);
+  createNotification(
+    userId,
+    'Wallet Credited',
+    `Your account was credited with $${valAmount}. Reason: ${reason.trim()}`
+  );
+  logActivity(req.userId, 'ADMIN_WALLET_CREDIT', `Credited $${valAmount} to user ${userId}. Reason: ${reason.trim()}`, req);
+  db.save();
+
+  return res.json({
+    message: `Successfully credited $${valAmount} to wallet.`,
+    wallet: updatedWallet || { balance: memWallet.balance, demoBalance: memWallet.demoBalance },
+    transaction: txRecord,
+  });
+});
+
+/**
+ * POST /api/admin/wallets/:userId/debit
+ * Body: { amount: 50, reason: "Correction" }
+ * Effect: wallet.balance -= amount
+ * Rule: Prevent balance going below zero
+ */
+app.post('/api/admin/wallets/:userId/debit', authenticate, requireAdmin, async (req: any, res) => {
+  const { userId } = req.params;
+  const { amount, reason } = req.body;
+
+  const valAmount = parseFloat(amount);
+  if (isNaN(valAmount) || valAmount <= 0) {
+    return res.status(400).json({ error: 'A valid positive amount is required.' });
+  }
+
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: 'Reason for wallet debit is required.' });
+  }
+
+  const targetUser = db.users.find((u) => u.id === userId);
+  if (req.userRole === 'admin' && targetUser?.role === 'owner') {
+    return res.status(403).json({ error: 'Admins cannot modify owner wallets.' });
+  }
+
+  const activeAsset = 'USD';
+  const prisma = getPrismaClient();
+
+  // Check current balance to prevent going below zero
+  let currentBalance = 0;
+  let walletId = `w_usd_${userId}`;
+
+  if (prisma) {
+    const w = await prisma.wallet.findFirst({ where: { userId, asset: activeAsset } });
+    if (w) {
+      currentBalance = Number(w.balance);
+      walletId = w.id;
+    }
+  } else {
+    const w = db.wallets.find((w) => w.userId === userId && w.asset === activeAsset);
+    if (w) {
+      currentBalance = w.balance;
+      walletId = w.id;
+    }
+  }
+
+  if (currentBalance < valAmount) {
+    return res.status(400).json({
+      error: `Insufficient balance. Cannot debit $${valAmount} when current balance is $${currentBalance.toFixed(2)}.`,
+    });
+  }
+
+  let updatedWallet: any = null;
+  let txRecord: any = null;
+
+  if (prisma) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        const wallet = await tx.wallet.update({
+          where: { id: walletId },
+          data: {
+            balance: { decrement: valAmount },
+          },
+        });
+
+        updatedWallet = {
+          id: wallet.id,
+          userId: wallet.userId,
+          asset: wallet.asset,
+          balance: Number(wallet.balance),
+          demoBalance: Number(wallet.demoBalance),
+        };
+
+        const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
+        const refId = `ADM-DB-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        const createdTx = await tx.transaction.create({
+          data: {
+            id: txId,
+            userId,
+            walletId: wallet.id,
+            type: 'admin_debit',
+            asset: activeAsset,
+            amount: valAmount,
+            status: 'completed',
+            txHash: refId,
+            description: reason.trim(),
+          },
+        });
+
+        txRecord = {
+          id: createdTx.id,
+          userId: createdTx.userId,
+          walletId: createdTx.walletId,
+          type: createdTx.type,
+          asset: createdTx.asset,
+          amount: Number(createdTx.amount),
+          status: createdTx.status,
+          txHash: createdTx.txHash,
+          description: createdTx.description,
+          createdAt: toSafeISOString(createdTx.createdAt),
+        };
+
+        await tx.activityLog.create({
+          data: {
+            userId: req.userId,
+            action: 'ADMIN_WALLET_DEBIT',
+            ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1',
+            details: `Debited $${valAmount} from user ${userId}. Reason: ${reason.trim()}`,
+          },
+        });
+      });
+    } catch (err: any) {
+      console.error('[ADMIN DEBIT] Prisma error:', err);
+    }
+  }
+
+  // Update in-memory db fallback
+  let memWallet = db.wallets.find((w) => w.userId === userId && w.asset === activeAsset);
+  if (memWallet) {
+    if (!updatedWallet) {
+      memWallet.balance = Number(Math.max(0, memWallet.balance - valAmount).toFixed(2));
+    } else {
+      memWallet.balance = updatedWallet.balance;
+    }
+    memWallet.updatedAt = new Date().toISOString();
+  }
+
+  if (!txRecord) {
+    const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
+    const refId = `ADM-DB-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    txRecord = {
+      id: txId,
+      userId,
+      walletId: memWallet ? memWallet.id : walletId,
+      type: 'admin_debit',
+      asset: activeAsset,
+      amount: valAmount,
+      status: 'completed',
+      txHash: refId,
+      description: reason.trim(),
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  db.transactions.push(txRecord);
+  createNotification(
+    userId,
+    'Wallet Debited',
+    `Your account was debited $${valAmount}. Reason: ${reason.trim()}`
+  );
+  logActivity(req.userId, 'ADMIN_WALLET_DEBIT', `Debited $${valAmount} from user ${userId}. Reason: ${reason.trim()}`, req);
+  db.save();
+
+  return res.json({
+    message: `Successfully debited $${valAmount} from wallet.`,
+    wallet: updatedWallet || { balance: memWallet ? memWallet.balance : 0, demoBalance: memWallet ? memWallet.demoBalance : 5000 },
+    transaction: txRecord,
+  });
+});
+
+/**
+ * POST /api/admin/wallets/:userId/reset
+ * Body: { resetRealBalance: true, resetDemoBalance: false }
+ */
+app.post('/api/admin/wallets/:userId/reset', authenticate, requireAdmin, async (req: any, res) => {
+  const { userId } = req.params;
+  const { resetRealBalance, resetDemoBalance } = req.body;
+
+  if (!resetRealBalance && !resetDemoBalance) {
+    return res.status(400).json({ error: 'Please specify at least one balance to reset (resetRealBalance or resetDemoBalance).' });
+  }
+
+  const targetUser = db.users.find((u) => u.id === userId);
+  if (req.userRole === 'admin' && targetUser?.role === 'owner') {
+    return res.status(403).json({ error: 'Admins cannot modify owner wallets.' });
+  }
+
+  const activeAsset = 'USD';
+  const prisma = getPrismaClient();
+
+  let updatedWallet: any = null;
+
+  if (prisma) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        let wallet = await tx.wallet.findFirst({
+          where: { userId, asset: activeAsset },
+        });
+
+        if (!wallet) {
+          wallet = await tx.wallet.create({
+            data: {
+              userId,
+              asset: activeAsset,
+              balance: 0,
+              demoBalance: 5000,
+            },
+          });
+        } else {
+          const updateData: any = {};
+          if (resetRealBalance) updateData.balance = 0;
+          if (resetDemoBalance) updateData.demoBalance = 5000;
+
+          wallet = await tx.wallet.update({
+            where: { id: wallet.id },
+            data: updateData,
+          });
+        }
+
+        updatedWallet = {
+          id: wallet.id,
+          userId: wallet.userId,
+          asset: wallet.asset,
+          balance: Number(wallet.balance),
+          demoBalance: Number(wallet.demoBalance),
+        };
+
+        const resetDetails = [
+          resetRealBalance ? 'Real Balance reset to $0.00' : null,
+          resetDemoBalance ? 'Demo Balance reset to $5,000.00' : null,
+        ].filter(Boolean).join(', ');
+
+        await tx.activityLog.create({
+          data: {
+            userId: req.userId,
+            action: 'ADMIN_WALLET_RESET',
+            ipAddress: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1',
+            details: `Reset wallet for user ${userId}: ${resetDetails}`,
+          },
+        });
+      });
+    } catch (err: any) {
+      console.error('[ADMIN RESET] Prisma error:', err);
+    }
+  }
+
+  // Update in-memory db fallback
+  let memWallet = db.wallets.find((w) => w.userId === userId && w.asset === activeAsset);
+  if (memWallet) {
+    if (resetRealBalance) memWallet.balance = 0;
+    if (resetDemoBalance) memWallet.demoBalance = 5000;
+    memWallet.updatedAt = new Date().toISOString();
+  }
+
+  const resetDetails = [
+    resetRealBalance ? 'Real Balance reset to $0.00' : null,
+    resetDemoBalance ? 'Demo Balance reset to $5,000.00' : null,
+  ].filter(Boolean).join(', ');
+
+  createNotification(
+    userId,
+    'Wallet Balance Reset',
+    `Your account balance was reset by Admin: ${resetDetails}.`
+  );
+  logActivity(req.userId, 'ADMIN_WALLET_RESET', `Reset wallet for user ${userId}: ${resetDetails}`, req);
+  db.save();
+
+  return res.json({
+    message: `Successfully reset wallet (${resetDetails}).`,
+    wallet: updatedWallet || {
+      balance: memWallet ? memWallet.balance : 0,
+      demoBalance: memWallet ? memWallet.demoBalance : 5000,
+    },
   });
 });
 

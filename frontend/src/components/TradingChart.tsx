@@ -47,33 +47,50 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight || 300,
       layout: {
-        background: { color: '#090C15' }, // Deep solid midnight blue
+        background: { color: '#070B16' }, // Dark trading terminal canvas
         textColor: '#848E9C',
+        fontSize: 11,
+        fontFamily: 'JetBrains Mono, monospace',
       },
       grid: {
-        vertLines: { color: '#131825' }, // subtle vertical grid lines
-        horzLines: { color: '#131825' }, // subtle horizontal grid lines
+        vertLines: { color: 'rgba(30, 41, 59, 0.4)' }, // subtle vertical grid lines
+        horzLines: { color: 'rgba(30, 41, 59, 0.4)' }, // subtle horizontal grid lines
       },
       crosshair: {
         mode: 1, // CrosshairMode.Normal
       },
       rightPriceScale: {
         borderColor: '#1E2538',
+        scaleMargins: { top: 0.15, bottom: 0.15 },
+        alignLabels: true,
       },
       timeScale: {
         borderColor: '#1E2538',
         timeVisible: true,
         secondsVisible: true, // Display seconds like 14:48:11
+        rightOffset: 12,
+        barSpacing: 8,
+        minBarSpacing: 3,
+        fixLeftEdge: false,
+        fixRightEdge: true,
+        lockVisibleTimeRangeOnResize: true,
       },
+      // Disable horizontal panning/scrolling so chart always tracks live price at right edge
+      handleScroll: false,
+      handleScale: false,
     });
 
     const areaSeries = chart.addSeries(AreaSeries, {
       lineColor: '#2563EB', // Deep blue line
-      topColor: 'rgba(37, 99, 235, 0.25)', // glowing top gradient
-      bottomColor: 'rgba(37, 99, 235, 0)', // transparent bottom gradient
+      topColor: 'rgba(37, 99, 235, 0.35)', // glowing top gradient
+      bottomColor: 'rgba(37, 99, 235, 0.02)', // transparent bottom gradient
       lineWidth: 2,
       priceLineColor: '#2563EB',
       priceLineVisible: true,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 5,
+      crosshairMarkerBorderColor: '#3B82F6',
+      crosshairMarkerBackgroundColor: '#1D4ED8',
     });
 
     // Populate with history
@@ -82,6 +99,9 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
 
     chartRef.current = chart;
     areaSeriesRef.current = areaSeries;
+
+    // Initially scroll to rightmost edge
+    chart.timeScale().scrollToRealTime();
 
     // Use ResizeObserver for full responsiveness
     const resizeObserver = new ResizeObserver((entries) => {
@@ -108,6 +128,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
           time: currentTickTime as any,
           value: Number(currentPrice.toFixed(2)),
         });
+        chartRef.current?.timeScale().scrollToRealTime();
       } catch (e) {
         // Safe skip on duplicate timestamp updates
       }

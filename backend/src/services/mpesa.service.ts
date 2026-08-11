@@ -5,7 +5,7 @@
 
 import axios from 'axios';
 import crypto from 'crypto';
-import { Database } from '../../server/db';
+import { Database, getPrismaClient } from '../../server/db';
 import { MpesaTransaction, MpesaStatus, Transaction, Notification } from '../types';
 import { formatPhoneNumber, generateTimestamp, generatePassword } from '../utils/mpesa';
 import { SMSService } from './sms.service';
@@ -212,6 +212,47 @@ export class MpesaService {
           createdAt: new Date().toISOString(),
         };
         db.notifications.push(notif);
+
+        const prisma = getPrismaClient();
+        if (prisma) {
+          try {
+            await prisma.$transaction(async (tx) => {
+              await tx.wallet.update({
+                where: { id: wallet.id },
+                data: {
+                  balance: { increment: creditedAmount }
+                }
+              });
+
+              await tx.transaction.create({
+                data: {
+                  id: txId,
+                  userId,
+                  walletId: wallet.id,
+                  type: 'deposit',
+                  asset: 'USD',
+                  amount: creditedAmount,
+                  status: 'completed',
+                  txHash: platformTx.txHash,
+                  description: platformTx.description
+                }
+              });
+
+              await tx.notification.create({
+                data: {
+                  id: notif.id,
+                  userId,
+                  title: notif.title,
+                  message: notif.message,
+                  read: false
+                }
+              });
+            });
+            console.log(`[MPESA] PostgreSQL transaction completed for user ${userId}. Credited $${creditedAmount.toFixed(2)} USD.`);
+          } catch (err) {
+            console.error('[MPESA] PostgreSQL transaction error:', err);
+          }
+        }
 
         // Send SMS & Email Notifications
         const targetUser = db.users.find(u => u.id === userId);
