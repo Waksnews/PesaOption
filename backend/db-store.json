@@ -71,9 +71,9 @@
       "id": "w_usd_u_awaz0vq81",
       "userId": "u_awaz0vq81",
       "asset": "USD",
-      "balance": 0,
+      "balance": 0.0077,
       "demoBalance": 5000,
-      "updatedAt": "2026-07-31T12:08:01.180Z"
+      "updatedAt": "2026-08-11T16:47:53.400Z"
     },
     {
       "id": "w_btc_u_awaz0vq81",
@@ -140,6 +140,18 @@
       "txHash": "0xfbe0d781c00db45dc29394b49c2101cfd633d95d5455fb3e0b8428cf05e825db",
       "description": "Trade Win +19.80 Completed",
       "createdAt": "2026-07-31T12:08:37.996Z"
+    },
+    {
+      "id": "tx_aglp0f97z",
+      "userId": "u_awaz0vq81",
+      "walletId": "w_usd_u_awaz0vq81",
+      "type": "deposit",
+      "asset": "USD",
+      "amount": 0.0077,
+      "status": "completed",
+      "txHash": "0xde5d817c3acf1dd3b1214c37f222689a5a49aa5c85776d0e5ca63731c1284bc6",
+      "description": "ZetuPay M-Pesa Deposit (Ref: PO-DEP-DE5731, Receipt: QWE123RTY, KES 1)",
+      "createdAt": "2026-08-11T16:47:53.400Z"
     }
   ],
   "trades": [
@@ -353,6 +365,14 @@
       "message": "Your RISE FALL trade on VOL_100 resolved at 12690.4 (Last digit: 0). Stake: $10, Payout: +$9.8",
       "read": true,
       "createdAt": "2026-07-31T12:08:37.997Z"
+    },
+    {
+      "id": "not_xnf1dnrlt",
+      "userId": "u_awaz0vq81",
+      "title": "Deposit Received",
+      "message": "Deposit received. KES 1 ($0.01 USD) credited to your real wallet.",
+      "read": false,
+      "createdAt": "2026-08-11T16:47:53.430Z"
     }
   ],
   "referralCodes": [
@@ -396,8 +416,60 @@
       "ipAddress": "192.168.1.5",
       "details": "Successful desktop logon session.",
       "createdAt": "2026-07-31T12:06:21.322Z"
+    },
+    {
+      "id": "log_opbagemvg",
+      "userId": "trader_user_1",
+      "action": "User Login",
+      "ipAddress": "2a09:bac5:d525:46e::71:5e, 169.254.169.126",
+      "details": "Successfully authenticated and session established.",
+      "createdAt": "2026-08-11T15:27:08.879Z"
+    },
+    {
+      "id": "log_zg7f4b4r2",
+      "userId": "trader_user_1",
+      "action": "User Login",
+      "ipAddress": "2a09:bac5:d520:46e::71:5e, 169.254.169.126",
+      "details": "Successfully authenticated and session established.",
+      "createdAt": "2026-08-11T15:56:43.495Z"
+    },
+    {
+      "id": "log_ow5qo6p72",
+      "userId": "u_awaz0vq81",
+      "action": "ZetuPay Deposit Credited",
+      "details": "Credited $0.01 USD via ZetuPay M-Pesa (Ref: PO-DEP-DE5731, Receipt: QWE123RTY)",
+      "ipAddress": "ZetuPay Webhook Gateway",
+      "createdAt": "2026-08-11T16:47:53.400Z"
     }
   ],
   "mpesaTransactions": [],
-  "paymentTransactions": []
+  "paymentTransactions": [
+    {
+      "id": "pay_d7cwea9n7",
+      "userId": "u_awaz0vq81",
+      "invoiceId": "PO-DEP-DE5731",
+      "provider": "zetupay",
+      "paymentMethod": "M-PESA",
+      "phone": "",
+      "amount": 1,
+      "currency": "KES",
+      "status": "Completed",
+      "reference": "PO-DEP-DE5731",
+      "waveTransactionId": "WAVE-TEST-DE5731",
+      "createdAt": "2026-08-11T16:47:53.398Z",
+      "updatedAt": "2026-08-11T16:47:53.400Z",
+      "paymentCurrency": "KES",
+      "walletCurrency": "USD",
+      "exchangeRate": 130,
+      "originalAmount": 1,
+      "creditedAmount": 0.0077,
+      "receiptNumber": "QWE123RTY",
+      "grossAmount": 1,
+      "providerFee": 0,
+      "netAmount": 1
+    }
+  ],
+  "exchangeRates": {
+    "USD_KES": 130
+  }
 }
