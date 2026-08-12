@@ -329,6 +329,51 @@ export class Database {
           }));
 
           console.log(`[DB] Successfully loaded from PostgreSQL (${this.data.users.length} users, ${this.data.wallets.length} wallets, ${this.data.trades.length} trades, ${this.data.transactions.length} transactions).`);
+
+          // Ensure platform_settings table exists and load setting from PostgreSQL
+          try {
+            await prisma.$executeRawUnsafe(`
+              CREATE TABLE IF NOT EXISTS platform_settings (
+                id VARCHAR(255) PRIMARY KEY DEFAULT 'default',
+                minimum_deposit_kes DECIMAL(16, 2) NOT NULL DEFAULT 100.00,
+                minimum_deposit_usd DECIMAL(16, 2) NOT NULL DEFAULT 5.00,
+                updated_by VARCHAR(255),
+                updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+              );
+            `);
+
+            const settingRecord = await prisma.platformSettings.findUnique({ where: { id: 'default' } });
+            if (settingRecord) {
+              this.data.platformSettings = {
+                id: settingRecord.id,
+                minimumDepositKES: Number(settingRecord.minimumDepositKES),
+                minimumDepositUSD: Number(settingRecord.minimumDepositUSD),
+                updatedBy: settingRecord.updatedBy || undefined,
+                updatedAt: toSafeISOString(settingRecord.updatedAt) || new Date().toISOString()
+              };
+              console.log(`[DB] Loaded persistent platform settings from PostgreSQL: Min KES ${this.data.platformSettings.minimumDepositKES}, Min USD ${this.data.platformSettings.minimumDepositUSD}`);
+            } else {
+              const defaultKes = this.data.platformSettings?.minimumDepositKES ?? 100;
+              const defaultUsd = this.data.platformSettings?.minimumDepositUSD ?? 5;
+              const created = await prisma.platformSettings.create({
+                data: {
+                  id: 'default',
+                  minimumDepositKES: defaultKes,
+                  minimumDepositUSD: defaultUsd
+                }
+              });
+              this.data.platformSettings = {
+                id: created.id,
+                minimumDepositKES: Number(created.minimumDepositKES),
+                minimumDepositUSD: Number(created.minimumDepositUSD),
+                updatedAt: toSafeISOString(created.updatedAt) || new Date().toISOString()
+              };
+              console.log('[DB] Initialized persistent platform_settings row in PostgreSQL.');
+            }
+          } catch (psErr) {
+            console.warn('[DB] Error loading platform_settings from PostgreSQL:', psErr);
+          }
+
           this.ensureOwnerRole();
           return;
         } else {
@@ -756,6 +801,36 @@ export class Database {
         });
       }
 
+      // Upsert PlatformSettings
+      if (this.data.platformSettings) {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS platform_settings (
+            id VARCHAR(255) PRIMARY KEY DEFAULT 'default',
+            minimum_deposit_kes DECIMAL(16, 2) NOT NULL DEFAULT 100.00,
+            minimum_deposit_usd DECIMAL(16, 2) NOT NULL DEFAULT 5.00,
+            updated_by VARCHAR(255),
+            updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+        `).catch(() => {});
+
+        await prisma.platformSettings.upsert({
+          where: { id: 'default' },
+          update: {
+            minimumDepositKES: this.data.platformSettings.minimumDepositKES,
+            minimumDepositUSD: this.data.platformSettings.minimumDepositUSD,
+            updatedBy: this.data.platformSettings.updatedBy || null,
+            updatedAt: new Date()
+          },
+          create: {
+            id: 'default',
+            minimumDepositKES: this.data.platformSettings.minimumDepositKES,
+            minimumDepositUSD: this.data.platformSettings.minimumDepositUSD,
+            updatedBy: this.data.platformSettings.updatedBy || null,
+            updatedAt: new Date()
+          }
+        });
+      }
+
       console.log('[DB] Synchronized data to PostgreSQL via Prisma successfully.');
     } catch (err) {
       console.warn('[DB] Error saving to PostgreSQL via Prisma:', err);
@@ -825,6 +900,62 @@ export class Database {
     }
     return this.data.platformSettings;
   }
+
+  public async updatePlatformSettingsAsync(settings: Partial<PlatformSettings>, updatedBy?: string): Promise<PlatformSettings> {
+    const current = this.getPlatformSettings();
+    if (settings.minimumDepositKES !== undefined && settings.minimumDepositKES > 0) {
+      current.minimumDepositKES = settings.minimumDepositKES;
+    }
+    if (settings.minimumDepositUSD !== undefined && settings.minimumDepositUSD > 0) {
+      current.minimumDepositUSD = settings.minimumDepositUSD;
+    }
+    current.updatedAt = new Date().toISOString();
+    if (updatedBy) current.updatedBy = updatedBy;
+
+    const prisma = getPrismaClient();
+    if (prisma) {
+      try {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS platform_settings (
+            id VARCHAR(255) PRIMARY KEY DEFAULT 'default',
+            minimum_deposit_kes DECIMAL(16, 2) NOT NULL DEFAULT 100.00,
+            minimum_deposit_usd DECIMAL(16, 2) NOT NULL DEFAULT 5.00,
+            updated_by VARCHAR(255),
+            updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+        `).catch(() => {});
+
+        const updatedRecord = await prisma.platformSettings.upsert({
+          where: { id: 'default' },
+          update: {
+            minimumDepositKES: current.minimumDepositKES,
+            minimumDepositUSD: current.minimumDepositUSD,
+            updatedBy: current.updatedBy || null,
+            updatedAt: new Date()
+          },
+          create: {
+            id: 'default',
+            minimumDepositKES: current.minimumDepositKES,
+            minimumDepositUSD: current.minimumDepositUSD,
+            updatedBy: current.updatedBy || null,
+            updatedAt: new Date()
+          }
+        });
+
+        current.minimumDepositKES = Number(updatedRecord.minimumDepositKES);
+        current.minimumDepositUSD = Number(updatedRecord.minimumDepositUSD);
+        current.updatedAt = toSafeISOString(updatedRecord.updatedAt) || new Date().toISOString();
+        if (updatedRecord.updatedBy) current.updatedBy = updatedRecord.updatedBy;
+        console.log(`[DB] Successfully updated and persisted platform_settings to Neon PostgreSQL: KES ${current.minimumDepositKES}`);
+      } catch (err) {
+        console.error('[DB] Error persisting platform_settings to PostgreSQL:', err);
+      }
+    }
+
+    this.save();
+    return current;
+  }
+
   public updatePlatformSettings(settings: Partial<PlatformSettings>, updatedBy?: string): PlatformSettings {
     const current = this.getPlatformSettings();
     if (settings.minimumDepositKES !== undefined && settings.minimumDepositKES > 0) {
@@ -835,6 +966,11 @@ export class Database {
     }
     current.updatedAt = new Date().toISOString();
     if (updatedBy) current.updatedBy = updatedBy;
+
+    this.updatePlatformSettingsAsync(settings, updatedBy).catch(err => {
+      console.error('[DB] Error running background updatePlatformSettingsAsync:', err);
+    });
+
     this.save();
     return current;
   }

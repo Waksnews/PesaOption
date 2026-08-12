@@ -2459,20 +2459,25 @@ app.get('/api/admin/settings', authenticate, requireAdmin, (req, res) => {
   res.json(settings);
 });
 
-app.post('/api/admin/settings', authenticate, requireAdmin, (req: any, res) => {
+const handleSaveAdminSettings = async (req: any, res: any) => {
   try {
-    const { minimumDepositKES, minimumDepositUSD } = req.body;
-    const kes = parseFloat(minimumDepositKES);
-    const usd = parseFloat(minimumDepositUSD);
+    const { minimumDepositKES, minimumDepositUSD, minimumDeposit } = req.body;
+    const current = db.getPlatformSettings();
+
+    const kesVal = minimumDepositKES !== undefined ? minimumDepositKES : (minimumDeposit !== undefined ? minimumDeposit : current.minimumDepositKES);
+    const usdVal = minimumDepositUSD !== undefined ? minimumDepositUSD : current.minimumDepositUSD;
+
+    const kes = parseFloat(kesVal);
+    const usd = parseFloat(usdVal);
 
     if (isNaN(kes) || kes <= 0) {
-      return res.status(400).json({ error: 'minimumDepositKES must be a number greater than 0.' });
+      return res.status(400).json({ error: 'minimumDepositKES must be a valid number greater than 0.' });
     }
     if (isNaN(usd) || usd <= 0) {
-      return res.status(400).json({ error: 'minimumDepositUSD must be a number greater than 0.' });
+      return res.status(400).json({ error: 'minimumDepositUSD must be a valid number greater than 0.' });
     }
 
-    const updated = db.updatePlatformSettings(
+    const updated = await db.updatePlatformSettingsAsync(
       { minimumDepositKES: kes, minimumDepositUSD: usd },
       req.userId
     );
@@ -2487,13 +2492,19 @@ app.post('/api/admin/settings', authenticate, requireAdmin, (req: any, res) => {
     return res.json({
       success: true,
       message: `Successfully updated minimum deposit limits to KES ${kes} / USD ${usd}`,
-      settings: updated
+      settings: updated,
+      minimumDepositKES: updated.minimumDepositKES,
+      minimumDepositUSD: updated.minimumDepositUSD
     });
   } catch (error: any) {
     console.error('[ADMIN SETTINGS ERROR]', error);
     return res.status(500).json({ error: error.message || 'Failed to update platform settings.' });
   }
-});
+};
+
+app.post('/api/admin/settings', authenticate, requireAdmin, handleSaveAdminSettings);
+app.put('/api/admin/settings', authenticate, requireAdmin, handleSaveAdminSettings);
+app.put('/api/admin/settings/minimum-deposit', authenticate, requireAdmin, handleSaveAdminSettings);
 
 app.post('/api/admin/exchange-rates', authenticate, requireAdmin, (req: any, res) => {
   try {

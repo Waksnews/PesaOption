@@ -46,18 +46,16 @@ export const DepositModal: React.FC = () => {
 
   // Fetch platform settings on modal mount or open
   useEffect(() => {
-    if (depositModalOpen) {
-      callApi<{ minimumDepositKES: number; minimumDepositUSD: number }>('/api/settings')
-        .then(data => {
-          if (data) {
-            setMinSettings({
-              minimumDepositKES: data.minimumDepositKES ?? 100,
-              minimumDepositUSD: data.minimumDepositUSD ?? 5,
-            });
-          }
-        })
-        .catch(err => console.warn('[DEPOSIT MODAL] Failed to fetch settings:', err));
-    }
+    callApi<{ minimumDepositKES: number; minimumDepositUSD: number }>('/api/settings')
+      .then(data => {
+        if (data) {
+          setMinSettings({
+            minimumDepositKES: data.minimumDepositKES ?? 100,
+            minimumDepositUSD: data.minimumDepositUSD ?? 5,
+          });
+        }
+      })
+      .catch(err => console.warn('[DEPOSIT MODAL] Failed to fetch settings:', err));
   }, [depositModalOpen]);
 
   useEffect(() => {

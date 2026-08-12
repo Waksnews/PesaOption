@@ -76,13 +76,20 @@ export const AdminView: React.FC = () => {
 
     setIsSavingPlatformSettings(true);
     try {
-      const res = await callApi<{ success: boolean; message: string; settings: any }>('/api/admin/settings', {
-        method: 'POST',
+      const res = await callApi<{ success: boolean; message: string; settings: any; minimumDepositKES?: number; minimumDepositUSD?: number }>('/api/admin/settings', {
+        method: 'PUT',
         body: JSON.stringify({ minimumDepositKES: kesNum, minimumDepositUSD: usdNum })
       });
 
-      if (res && res.success) {
-        addToast('Platform Settings Saved', res.message || 'Minimum deposit limits updated successfully.', 'success');
+      if (res && (res.success || res.minimumDepositKES !== undefined)) {
+        addToast('Platform Settings Saved', res.message || 'Minimum deposit limits updated successfully in PostgreSQL.', 'success');
+        if (res.settings) {
+          if (res.settings.minimumDepositKES !== undefined) setMinDepositKESInput(res.settings.minimumDepositKES.toString());
+          if (res.settings.minimumDepositUSD !== undefined) setMinDepositUSDInput(res.settings.minimumDepositUSD.toString());
+        } else if (res.minimumDepositKES !== undefined) {
+          setMinDepositKESInput(res.minimumDepositKES.toString());
+          if (res.minimumDepositUSD !== undefined) setMinDepositUSDInput(res.minimumDepositUSD.toString());
+        }
       } else {
         addToast('Update Failed', 'Failed to update platform settings.', 'error');
       }

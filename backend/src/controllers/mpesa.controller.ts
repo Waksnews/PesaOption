@@ -25,6 +25,16 @@ export class MpesaController {
       return res.status(400).json({ error: 'Please enter a valid deposit amount.' });
     }
 
+    const { Database } = require('../../server/db');
+    const db = Database.getInstance();
+    const platformSettings = db.getPlatformSettings();
+
+    if (numericAmount < platformSettings.minimumDepositKES) {
+      return res.status(400).json({
+        error: `Minimum deposit is KES ${platformSettings.minimumDepositKES}.`
+      });
+    }
+
     if (!isValidPhoneNumber(phoneNumber)) {
       return res.status(400).json({ error: 'Please enter a valid Safaricom phone number (e.g., 07xxxxxxxx or 01xxxxxxxx).' });
     }
