@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useApp, logAuth } from '../context/AppContext';
 import { useNavigate, useLocation, Routes, Route, Navigate } from 'react-router-dom';
 import { useWalletStore } from '../stores/walletStore';
@@ -13,18 +13,20 @@ import { useChatStore } from '../stores/chatStore';
 import { useSSE } from '../hooks/useSSE';
 import { formatCurrency } from '../lib/currency';
 
-// Import modular subviews
+// Primary View - eagerly loaded for immediate trading desk availability
 import { TradingDeskView } from './views/TradingDeskView';
-import { ScannerView } from './views/ScannerView';
-import { WalletsView } from './views/WalletsView';
-import { ReferralView } from './views/ReferralView';
-import { SupportView } from './views/SupportView';
-import { SecurityView } from './views/SecurityView';
-import { ProfileView } from './views/ProfileView';
-import { SettingsView } from './views/SettingsView';
-import { HistoryView } from './views/HistoryView';
-import { AdminView } from './views/AdminView';
-import { DepositCallbackView } from './views/DepositCallbackView';
+
+// Secondary Subviews - code-split / lazy loaded for fast initial app startup
+const ScannerView = lazy(() => import('./views/ScannerView').then(m => ({ default: m.ScannerView })));
+const WalletsView = lazy(() => import('./views/WalletsView').then(m => ({ default: m.WalletsView })));
+const ReferralView = lazy(() => import('./views/ReferralView').then(m => ({ default: m.ReferralView })));
+const SupportView = lazy(() => import('./views/SupportView').then(m => ({ default: m.SupportView })));
+const SecurityView = lazy(() => import('./views/SecurityView').then(m => ({ default: m.SecurityView })));
+const ProfileView = lazy(() => import('./views/ProfileView').then(m => ({ default: m.ProfileView })));
+const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
+const HistoryView = lazy(() => import('./views/HistoryView').then(m => ({ default: m.HistoryView })));
+const AdminView = lazy(() => import('./views/AdminView').then(m => ({ default: m.AdminView })));
+const DepositCallbackView = lazy(() => import('./views/DepositCallbackView').then(m => ({ default: m.DepositCallbackView })));
 
 // Import modals and utilities
 import { NavigationDrawer } from './NavigationDrawer';
@@ -352,20 +354,27 @@ export const DashboardView: React.FC = () => {
 
         {/* Outer Workspace with active Router Views */}
         <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-5">
-          <Routes>
-            <Route path="/" element={<TradingDeskView />} />
-            <Route path="/scanner" element={<ScannerView />} />
-            <Route path="/wallet" element={<WalletsView />} />
-            <Route path="/deposit/callback" element={<DepositCallbackView />} />
-            <Route path="/referral" element={<ReferralView />} />
-            <Route path="/support" element={<SupportView />} />
-            <Route path="/security" element={<SecurityView />} />
-            <Route path="/profile" element={<ProfileView />} />
-            <Route path="/settings" element={<SettingsView />} />
-            <Route path="/history" element={<HistoryView />} />
-            <Route path="/admin" element={(user?.role === 'admin' || user?.role === 'owner') ? <AdminView /> : <Navigate to="/" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <Suspense fallback={
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 space-y-3">
+              <RefreshCw className="w-6 h-6 animate-spin text-teal-400" />
+              <p className="font-mono text-xs uppercase tracking-widest">Loading Module...</p>
+            </div>
+          }>
+            <Routes>
+              <Route path="/" element={<TradingDeskView />} />
+              <Route path="/scanner" element={<ScannerView />} />
+              <Route path="/wallet" element={<WalletsView />} />
+              <Route path="/deposit/callback" element={<DepositCallbackView />} />
+              <Route path="/referral" element={<ReferralView />} />
+              <Route path="/support" element={<SupportView />} />
+              <Route path="/security" element={<SecurityView />} />
+              <Route path="/profile" element={<ProfileView />} />
+              <Route path="/settings" element={<SettingsView />} />
+              <Route path="/history" element={<HistoryView />} />
+              <Route path="/admin" element={(user?.role === 'admin' || user?.role === 'owner') ? <AdminView /> : <Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </div>
 
       </div>

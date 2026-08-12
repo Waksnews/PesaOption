@@ -169,7 +169,7 @@ export const useTradeStore = create<TradeState>((set, get) => ({
         predictionValue = `${selectedPrediction}:${predictionDigit}`;
       }
 
-      await callApi('/api/trade/open', {
+      const res = await callApi<{ message: string; trade: Trade; wallets: any }>('/api/trade/open', {
         method: 'POST',
         body: JSON.stringify({
           symbol,
@@ -181,6 +181,16 @@ export const useTradeStore = create<TradeState>((set, get) => ({
           durationSeconds: contractMode === 'option' ? optionDuration : undefined
         })
       });
+
+      if (res && res.trade) {
+        set((state) => ({
+          openPositions: [res.trade, ...state.openPositions.filter((p) => p.id !== res.trade.id)]
+        }));
+      }
+
+      if (res && res.wallets) {
+        useWalletStore.getState().setWallets(res.wallets);
+      }
 
       // Clear msg, trigger sound
       useNotificationStore.getState().addToast(
@@ -198,10 +208,19 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
   closePositionEarly: async (tradeId) => {
     try {
-      await callApi('/api/trade/close', {
+      const res = await callApi<{ message: string; trade?: Trade; wallets?: any }>('/api/trade/close', {
         method: 'POST',
         body: JSON.stringify({ tradeId })
       });
+
+      set((state) => ({
+        openPositions: state.openPositions.filter((p) => p.id !== tradeId)
+      }));
+
+      if (res && res.wallets) {
+        useWalletStore.getState().setWallets(res.wallets);
+      }
+
       useNotificationStore.getState().addToast(
         'Position Closed',
         'Option position settled early at current market rate.',

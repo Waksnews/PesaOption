@@ -3,17 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AppProvider, useApp, logAuth } from './context/AppContext';
 import { LandingView } from './components/LandingView';
 import { AuthView } from './components/AuthView';
 import { DashboardView } from './components/DashboardView';
-import { ResetPassword } from './components/ResetPassword';
-import { 
-  AboutPage, ContactPage, FAQPage, HowToDepositPage, HowToWithdrawPage, PolicyPage 
-} from './components/pages/PublicPages';
 import { HashRouter } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
+
+const ResetPassword = lazy(() => import('./components/ResetPassword').then(m => ({ default: m.ResetPassword })));
+const AboutPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.AboutPage })));
+const ContactPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.ContactPage })));
+const FAQPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.FAQPage })));
+const HowToDepositPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.HowToDepositPage })));
+const HowToWithdrawPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.HowToWithdrawPage })));
+const PolicyPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.PolicyPage })));
 
 const InnerRouter: React.FC = () => {
   const { user, loading } = useApp();
@@ -103,32 +107,43 @@ const InnerRouter: React.FC = () => {
     );
   }
 
+  const pageFallback = (
+    <div className="bg-slate-950 min-h-screen flex flex-col items-center justify-center text-slate-400 space-y-4">
+      <RefreshCw className="w-8 h-8 text-teal-400 animate-spin" />
+      <p className="font-mono text-xs uppercase tracking-widest text-slate-500 animate-pulse">
+        Loading requested page...
+      </p>
+    </div>
+  );
+
   // If user opened a reset password link, render ResetPassword directly
   if (isResetRoute && !user) {
     return (
-      <ResetPassword 
-        onBackToLogin={() => {
-          // Clear query params and return to clean login page
-          window.history.pushState({}, '', window.location.pathname);
-          setIsResetRoute(false);
-          setScreen('login');
-        }} 
-      />
+      <Suspense fallback={pageFallback}>
+        <ResetPassword 
+          onBackToLogin={() => {
+            // Clear query params and return to clean login page
+            window.history.pushState({}, '', window.location.pathname);
+            setIsResetRoute(false);
+            setScreen('login');
+          }} 
+        />
+      </Suspense>
     );
   }
 
   // Render Public Pages if active screen is a public page
-  if (screen === 'about') return <AboutPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'contact') return <ContactPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'faq') return <FAQPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'how-to-deposit') return <HowToDepositPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'how-to-withdraw') return <HowToWithdrawPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'privacy') return <PolicyPage type="privacy" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'terms') return <PolicyPage type="terms" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'risk') return <PolicyPage type="risk" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'aml') return <PolicyPage type="aml" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'kyc') return <PolicyPage type="kyc" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
-  if (screen === 'cookie') return <PolicyPage type="cookie" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} />;
+  if (screen === 'about') return <Suspense fallback={pageFallback}><AboutPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'contact') return <Suspense fallback={pageFallback}><ContactPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'faq') return <Suspense fallback={pageFallback}><FAQPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'how-to-deposit') return <Suspense fallback={pageFallback}><HowToDepositPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'how-to-withdraw') return <Suspense fallback={pageFallback}><HowToWithdrawPage onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'privacy') return <Suspense fallback={pageFallback}><PolicyPage type="privacy" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'terms') return <Suspense fallback={pageFallback}><PolicyPage type="terms" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'risk') return <Suspense fallback={pageFallback}><PolicyPage type="risk" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'aml') return <Suspense fallback={pageFallback}><PolicyPage type="aml" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'kyc') return <Suspense fallback={pageFallback}><PolicyPage type="kyc" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
+  if (screen === 'cookie') return <Suspense fallback={pageFallback}><PolicyPage type="cookie" onBack={() => setScreen(user ? 'dashboard' : 'landing')} onNavigate={navigateToPage} onEnterApp={(m) => setScreen(m)} /></Suspense>;
 
   // If user is authenticated, route to trading dashboard
   if (user) {

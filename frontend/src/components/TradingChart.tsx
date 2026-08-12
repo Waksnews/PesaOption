@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createChart, AreaSeries } from 'lightweight-charts';
 
 interface TradingChartProps {
@@ -11,30 +11,32 @@ interface TradingChartProps {
   currentPrice: number;
 }
 
-export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice }) => {
+export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, currentPrice }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any | null>(null);
   const areaSeriesRef = useRef<any | null>(null);
+  const lastTimeRef = useRef<number>(0);
 
-  // Generate historical tick data
+  // Generate historical tick data ending 2s before now
   const generateHistory = (basePrice: number) => {
     const data = [];
-    const now = new Date();
+    const now = Math.floor(Date.now() / 1000);
     let currentVal = basePrice * 0.99; // start a bit lower
     
-    // Create 100 historical tick points (spaced by 2 seconds)
-    for (let i = 100; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 2000);
+    // Create 100 historical tick points (spaced by 2 seconds) ending at now - 2
+    for (let i = 100; i >= 1; i--) {
+      const time = now - i * 2;
       const volatility = basePrice * 0.001;
       
       // Brownian random walk
       currentVal = currentVal + (Math.random() - 0.495) * volatility;
       
       data.push({
-        time: Math.floor(time.getTime() / 1000) as any,
+        time: time as any,
         value: Number(currentVal.toFixed(2)),
       });
     }
+    lastTimeRef.current = now - 2;
     return data;
   };
 
@@ -115,29 +117,31 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
     return () => {
       resizeObserver.disconnect();
       chart.remove();
+      chartRef.current = null;
+      areaSeriesRef.current = null;
     };
   }, [symbol]); // Rebuild on asset change
 
-  // Append new live tick price
+  // Append new live tick price smoothly
   useEffect(() => {
-    if (areaSeriesRef.current) {
-      const now = new Date();
-      const currentTickTime = Math.floor(now.getTime() / 1000);
+    if (areaSeriesRef.current && currentPrice > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const tickTime = Math.max(nowSec, lastTimeRef.current);
+      lastTimeRef.current = tickTime;
       try {
         areaSeriesRef.current.update({
-          time: currentTickTime as any,
+          time: tickTime as any,
           value: Number(currentPrice.toFixed(2)),
         });
-        chartRef.current?.timeScale().scrollToRealTime();
       } catch (e) {
-        // Safe skip on duplicate timestamp updates
+        // Safe skip on unexpected duplicate
       }
     }
   }, [currentPrice]);
 
   return (
     <div className="relative bg-[#090C15] border border-slate-800 rounded-2xl overflow-hidden p-2 sm:p-4">
-      {/* Zoom in/out floating controllers on bottom-left, matching the screenshot layout */}
+      {/* Zoom in/out floating controllers on bottom-left */}
       <div className="absolute bottom-16 left-6 flex flex-col space-y-1.5 z-10">
         <button 
           onClick={() => chartRef.current?.timeScale().zoomIn(1)}
@@ -160,3 +164,5 @@ export const TradingChart: React.FC<TradingChartProps> = ({ symbol, currentPrice
     </div>
   );
 };
+
+export const TradingChart = React.memo(TradingChartComponent);

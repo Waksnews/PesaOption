@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   User, Wallet, Transaction, Trade, SupportTicket, 
   Announcement, Notification, MarketPrice, UserRole, ActivityLog,
@@ -146,7 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [ownerLogs, setOwnerLogs] = useState<(ActivityLog & { userEmail: string; userRole: string })[]>([]);
 
   // Base API caller
-  const callApi = useCallback(async (path: string, options: RequestInit = {}) => {
+  const callApi = useCallback(async <T = any,>(path: string, options: RequestInit = {}): Promise<T> => {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
     const fullPath = path.startsWith('http') ? path : `${baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -328,10 +328,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [token]);
 
+  const hasSetInitialPricesRef = useRef(false);
+
   // SSE Real-Time pricing connection setup
   useEffect(() => {
+    const userId = user?.id;
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const rawPath = user ? `/api/realtime?userId=${user.id}` : '/api/realtime';
+    const rawPath = userId ? `/api/realtime?userId=${userId}` : '/api/realtime';
     const url = `${baseUrl}${rawPath}`;
     const sse = new EventSource(url);
 
@@ -339,8 +342,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === 'price_feed') {
-          // 1. Update general pricing feed
-          setPrices(payload.prices);
+          // 1. Update general pricing feed in Zustand (high-frequency) and initial AppContext prices
+          if (!hasSetInitialPricesRef.current && payload.prices && payload.prices.length > 0) {
+            hasSetInitialPricesRef.current = true;
+            setPrices(payload.prices);
+          }
           useMarketStore.getState().setPrices(payload.prices);
           
           // 2. Compute last digit for selected symbol
@@ -353,30 +359,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             useTradeStore.getState().addDigit(lastDigit);
           }
 
-          // 3. Update user's open positions
-          if (payload.activeTrades && token && user) {
-            const userOpenTrades = payload.activeTrades.filter((t: Trade) => t.userId === user.id);
-            setOpenPositions(userOpenTrades);
-            useTradeStore.getState().setOpenPositions(userOpenTrades);
+          // 3. Update user's open positions if changed
+          if (payload.activeTrades && token && userId) {
+            const userOpenTrades = payload.activeTrades.filter((t: Trade) => t.userId === userId);
+            const currentPositions = useTradeStore.getState().openPositions;
+            if (JSON.stringify(currentPositions) !== JSON.stringify(userOpenTrades)) {
+              setOpenPositions(userOpenTrades);
+              useTradeStore.getState().setOpenPositions(userOpenTrades);
+            }
           }
 
-          // 4. Update user's specific data
+          // 4. Update user's specific data if changed
           if (payload.wallets) {
-            setWallets(payload.wallets);
-            useWalletStore.getState().setWallets(payload.wallets);
+            const currentWallets = useWalletStore.getState().wallets;
+            if (JSON.stringify(currentWallets) !== JSON.stringify(payload.wallets)) {
+              setWallets(payload.wallets);
+              useWalletStore.getState().setWallets(payload.wallets);
+            }
           }
           if (payload.closedTrades) {
-            setClosedTrades(payload.closedTrades);
-            useTradeStore.getState().setClosedTrades(payload.closedTrades);
-            useHistoryStore.getState().setClosedTrades(payload.closedTrades);
+            const currentClosed = useTradeStore.getState().closedTrades;
+            if (JSON.stringify(currentClosed) !== JSON.stringify(payload.closedTrades)) {
+              setClosedTrades(payload.closedTrades);
+              useTradeStore.getState().setClosedTrades(payload.closedTrades);
+              useHistoryStore.getState().setClosedTrades(payload.closedTrades);
+            }
           }
           if (payload.transactions) {
-            setTransactions(payload.transactions);
-            useHistoryStore.getState().setTransactions(payload.transactions);
+            const currentTxs = useHistoryStore.getState().transactions;
+            if (JSON.stringify(currentTxs) !== JSON.stringify(payload.transactions)) {
+              setTransactions(payload.transactions);
+              useHistoryStore.getState().setTransactions(payload.transactions);
+            }
           }
           if (payload.notifications) {
-            setNotifications(payload.notifications);
-            useNotificationStore.getState().setNotifications(payload.notifications);
+            const currentNotifs = useNotificationStore.getState().notifications;
+            if (JSON.stringify(currentNotifs) !== JSON.stringify(payload.notifications)) {
+              setNotifications(payload.notifications);
+              useNotificationStore.getState().setNotifications(payload.notifications);
+            }
           }
         }
       } catch (err) {
@@ -391,7 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       sse.close();
     };
-  }, [token, user]);
+  }, [token, user?.id]);
 
   // Auth Operations
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -545,10 +566,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<boolean> => {
     try {
       setError(null);
-      await callApi('/api/trade/open', {
+      const res = await callApi<{ message: string; trade: Trade; wallets: any }>('/api/trade/open', {
         method: 'POST',
         body: JSON.stringify({ symbol, type, quantity, isDemo, contractType, prediction, durationSeconds })
       });
+
+      if (res && res.trade) {
+        setOpenPositions(prev => [res.trade, ...prev.filter(t => t.id !== res.trade.id)]);
+        useTradeStore.getState().setOpenPositions([res.trade, ...useTradeStore.getState().openPositions.filter(t => t.id !== res.trade.id)]);
+      }
+      if (res && res.wallets) {
+        setWallets(res.wallets);
+        useWalletStore.getState().setWallets(res.wallets);
+      }
+
       await refreshUserData();
       return true;
     } catch (e: any) {
@@ -560,10 +591,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const closeTrade = async (tradeId: string): Promise<boolean> => {
     try {
       setError(null);
-      await callApi('/api/trade/close', {
+      const res = await callApi<{ message: string; trade?: Trade; wallets?: any }>('/api/trade/close', {
         method: 'POST',
         body: JSON.stringify({ tradeId })
       });
+
+      setOpenPositions(prev => prev.filter(t => t.id !== tradeId));
+      useTradeStore.getState().setOpenPositions(useTradeStore.getState().openPositions.filter(t => t.id !== tradeId));
+
+      if (res && res.wallets) {
+        setWallets(res.wallets);
+        useWalletStore.getState().setWallets(res.wallets);
+      }
+
       await refreshUserData();
       return true;
     } catch (e: any) {
@@ -786,13 +826,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const contextValue = useMemo(() => ({
+    user, token, prices, wallets, transactions, openPositions, closedTrades, supportTickets, notifications, announcements, loading, error, adminData,
+    login, register, logout, updateProfile, changePassword, depositFunds, withdrawFunds, openTrade, closeTrade, createTicket, replyTicket, refreshUserData, markNotificationsRead,
+    fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminCreditWallet, adminDebitWallet, adminResetWallet, adminSearchWallets, adminApproveWithdrawal, adminRejectWithdrawal,
+    ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
+  }), [
+    user, token, prices, wallets, transactions, openPositions, closedTrades, supportTickets, notifications, announcements, loading, error, adminData,
+    login, register, logout, updateProfile, changePassword, depositFunds, withdrawFunds, openTrade, closeTrade, createTicket, replyTicket, refreshUserData, markNotificationsRead,
+    fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminCreditWallet, adminDebitWallet, adminResetWallet, adminSearchWallets, adminApproveWithdrawal, adminRejectWithdrawal,
+    ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
+  ]);
+
   return (
-    <AppContext.Provider value={{
-      user, token, prices, wallets, transactions, openPositions, closedTrades, supportTickets, notifications, announcements, loading, error, adminData,
-      login, register, logout, updateProfile, changePassword, depositFunds, withdrawFunds, openTrade, closeTrade, createTicket, replyTicket, refreshUserData, markNotificationsRead,
-      fetchAdminData, adminCloseTrade, adminUpdateTx, adminCreateAnnouncement, adminDeleteAnnouncement, adminChangeRole, adminAdjustWallet, adminCreditWallet, adminDebitWallet, adminResetWallet, adminSearchWallets, adminApproveWithdrawal, adminRejectWithdrawal,
-      ownerStats, systemHealth, ownerConfig, ownerLogs, fetchOwnerData, updateOwnerConfig
-    }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

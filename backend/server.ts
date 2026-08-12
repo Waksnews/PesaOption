@@ -470,7 +470,7 @@ app.post('/api/auth/register', async (req, res) => {
 
   if (prisma) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: any) => {
         // 1. Create User
         await tx.user.create({
           data: {
@@ -655,7 +655,7 @@ app.post('/api/auth/login', async (req, res) => {
       await prisma.user.update({
         where: { id: user.id },
         data: { role: 'owner' }
-      }).catch(err => console.error('[AUTH] Error promoting owner in PostgreSQL:', err));
+      }).catch((err: any) => console.error('[AUTH] Error promoting owner in PostgreSQL:', err));
     }
     const inMemUser = db.users.find(u => u.id === user!.id);
     if (inMemUser) {
@@ -1602,7 +1602,7 @@ app.get('/api/admin/wallets/users', authenticate, requireAdmin, async (req: any,
         orderBy: { createdAt: 'desc' },
       });
 
-      users = dbUsers.map((u) => ({
+      users = dbUsers.map((u: any) => ({
         id: u.id,
         email: u.email,
         fullName: u.fullName,
@@ -1610,7 +1610,7 @@ app.get('/api/admin/wallets/users', authenticate, requireAdmin, async (req: any,
         role: u.role,
         verified: u.verified,
         createdAt: toSafeISOString(u.createdAt),
-        wallets: u.wallets.map((w) => ({
+        wallets: u.wallets.map((w: any) => ({
           id: w.id,
           userId: w.userId,
           asset: w.asset,
@@ -1680,7 +1680,7 @@ app.post('/api/admin/wallets/:userId/credit', authenticate, requireAdmin, async 
 
   if (prisma) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: any) => {
         let wallet = await tx.wallet.findFirst({
           where: { userId, asset: activeAsset },
         });
@@ -1865,7 +1865,7 @@ app.post('/api/admin/wallets/:userId/debit', authenticate, requireAdmin, async (
 
   if (prisma) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: any) => {
         const wallet = await tx.wallet.update({
           where: { id: walletId },
           data: {
@@ -1993,7 +1993,7 @@ app.post('/api/admin/wallets/:userId/reset', authenticate, requireAdmin, async (
 
   if (prisma) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: any) => {
         let wallet = await tx.wallet.findFirst({
           where: { userId, asset: activeAsset },
         });

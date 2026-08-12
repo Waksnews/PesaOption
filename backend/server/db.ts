@@ -97,6 +97,9 @@ export class Database {
   private static instance: Database;
   private data: DatabaseSchema = { ...defaultSchema };
   private initPromise: Promise<void> | null = null;
+  private isSyncingPostgres = false;
+  private pendingPostgresSync = false;
+  private syncPostgresTimer: NodeJS.Timeout | null = null;
 
   private constructor() {
     this.init().catch(err => console.error('[DB] Database initialization error:', err));
@@ -850,9 +853,38 @@ export class Database {
       }
     }
 
-    // Sync to PostgreSQL if DATABASE_URL is present
+    // Schedule debounced/throttled Postgres sync if DATABASE_URL is present
     if (process.env.DATABASE_URL) {
-      this.syncToPostgres().catch(e => console.warn('[DB] Async Postgres sync error:', e));
+      this.schedulePostgresSync();
+    }
+  }
+
+  private schedulePostgresSync() {
+    if (this.syncPostgresTimer) {
+      clearTimeout(this.syncPostgresTimer);
+    }
+    // Debounce background PostgreSQL syncs by 5 seconds
+    this.syncPostgresTimer = setTimeout(() => {
+      this.runQueuedPostgresSync();
+    }, 5000);
+  }
+
+  private async runQueuedPostgresSync() {
+    if (this.isSyncingPostgres) {
+      this.pendingPostgresSync = true;
+      return;
+    }
+    this.isSyncingPostgres = true;
+    try {
+      await this.syncToPostgres();
+    } catch (e) {
+      console.warn('[DB] Async Postgres sync error:', e);
+    } finally {
+      this.isSyncingPostgres = false;
+      if (this.pendingPostgresSync) {
+        this.pendingPostgresSync = false;
+        this.schedulePostgresSync();
+      }
     }
   }
 

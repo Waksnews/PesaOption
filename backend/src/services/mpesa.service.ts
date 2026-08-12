@@ -216,7 +216,7 @@ export class MpesaService {
         const prisma = getPrismaClient();
         if (prisma) {
           try {
-            await prisma.$transaction(async (tx) => {
+            await prisma.$transaction(async (tx: any) => {
               await tx.wallet.update({
                 where: { id: wallet.id },
                 data: {

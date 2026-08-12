@@ -604,7 +604,7 @@ export class ZetuPayService {
     // 6. Prisma Transaction Execution
     if (prisma) {
       try {
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: any) => {
           await tx.paymentTransaction.upsert({
             where: { id: paymentTx.id },
             update: {
