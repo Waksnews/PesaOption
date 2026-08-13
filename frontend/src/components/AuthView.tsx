@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { TrendingUp, ShieldAlert, ArrowLeft, Mail, Lock, User, Gift, Sparkles } from 'lucide-react';
+import { TrendingUp, ShieldAlert, ArrowLeft, Mail, Lock, User, Gift, Sparkles, Loader2 } from 'lucide-react';
 import { ForgotPassword } from './ForgotPassword';
 import { ResetPassword } from './ResetPassword';
 
@@ -195,11 +195,16 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-teal-400 to-cyan-300 text-slate-950 font-bold rounded-xl shadow-lg hover:shadow-teal-500/10 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+              className="w-full py-3.5 bg-gradient-to-r from-teal-400 to-cyan-300 hover:from-teal-300 hover:to-cyan-200 text-slate-950 font-extrabold text-sm uppercase tracking-wider rounded-xl shadow-lg shadow-teal-500/10 active:scale-[0.98] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
-              {loading ? 'Processing Account...' : (
-                mode === 'login' ? 'Sign In' : 
-                mode === 'register' ? 'Open Trading Account' : 'Send Instructions'
+              {loading ? (
+                <>
+                  <Loader2 className="w-4.5 h-4.5 animate-spin text-slate-950" />
+                  <span>{mode === 'login' ? 'LOGGING IN...' : 'PROCESSING...'}</span>
+                </>
+              ) : (
+                mode === 'login' ? 'LOGIN' : 
+                mode === 'register' ? 'OPEN TRADING ACCOUNT' : 'SEND INSTRUCTIONS'
               )}
             </button>
           </form>

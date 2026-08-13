@@ -175,21 +175,21 @@ export const DepositModal: React.FC = () => {
   };
 
   const amountNum = parseFloat(amount) || 0;
-  const isKes = currency === 'KES';
-  const minRequired = isKes ? minSettings.minimumDepositKES : minSettings.minimumDepositUSD;
+  // Deposit currency is PERMANENTLY KES regardless of global site currency display setting
+  const minRequired = minSettings.minimumDepositKES || 300;
   const isAmountBelowMin = amountNum > 0 && amountNum < minRequired;
   const isAmountValid = amountNum >= minRequired;
   
-  // ZetuPay charge is processed in KES
+  // ZetuPay charge is processed directly in KES — NO conversion or multiplication by exchange rate!
+  const stkAmountInKes = amountNum;
   const rate = getUsdKesRate();
-  const stkAmountInKes = isKes ? amountNum : Math.round(amountNum * rate);
-  const creditedAmountInUsd = isKes ? (rate > 0 ? amountNum / rate : 0) : amountNum;
+  const creditedAmountInUsd = rate > 0 ? (amountNum / rate) : (amountNum / 130);
 
   const handleInitiateDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isAmountValid) {
-      addToast('Validation Warning', `Minimum deposit amount is ${currency} ${minRequired}.`, 'error');
+      addToast('Validation Warning', `Minimum deposit amount is KES ${minRequired}.`, 'error');
       return;
     }
 

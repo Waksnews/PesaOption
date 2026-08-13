@@ -6,11 +6,11 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { AppProvider, useApp, logAuth } from './context/AppContext';
 import { LandingView } from './components/LandingView';
-import { AuthView } from './components/AuthView';
-import { DashboardView } from './components/DashboardView';
 import { HashRouter } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 
+const AuthView = lazy(() => import('./components/AuthView').then(m => ({ default: m.AuthView })));
+const DashboardView = lazy(() => import('./components/DashboardView').then(m => ({ default: m.DashboardView })));
 const ResetPassword = lazy(() => import('./components/ResetPassword').then(m => ({ default: m.ResetPassword })));
 const AboutPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.AboutPage })));
 const ContactPage = lazy(() => import('./components/pages/PublicPages').then(m => ({ default: m.ContactPage })));
@@ -147,7 +147,7 @@ const InnerRouter: React.FC = () => {
 
   // If user is authenticated, route to trading dashboard
   if (user) {
-    return <DashboardView />;
+    return <Suspense fallback={pageFallback}><DashboardView /></Suspense>;
   }
 
   // Guest screen handling
@@ -161,10 +161,12 @@ const InnerRouter: React.FC = () => {
   }
 
   return (
-    <AuthView 
-      initialMode={screen as 'login' | 'register'} 
-      onBackToLanding={() => setScreen('landing')} 
-    />
+    <Suspense fallback={pageFallback}>
+      <AuthView 
+        initialMode={screen as 'login' | 'register'} 
+        onBackToLanding={() => setScreen('landing')} 
+      />
+    </Suspense>
   );
 };
 
