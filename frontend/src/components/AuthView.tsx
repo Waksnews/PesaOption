@@ -51,10 +51,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ initialMode, onBackToLanding
         }
         const ok = await register(email, password, fullName, referralCode || undefined);
         if (!ok) setLocalErr('Registration failed. Email might already be taken.');
-      } else if (mode === 'forgot') {
-        // Mock success
-        setSuccessMsg('Reset code and instructions sent to your email.');
-        setLocalErr(null);
       }
     } catch (err: any) {
       setLocalErr(err.message || 'An unexpected error occurred.');

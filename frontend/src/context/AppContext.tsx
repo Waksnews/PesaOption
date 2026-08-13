@@ -14,6 +14,8 @@ import { useTradeStore } from '../stores/tradeStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useMarketSimulation } from '../hooks/useMarketSimulation';
+import { marketSimulationService } from '../services/marketSimulationService';
 
 interface AppContextType {
   user: User | null;
@@ -116,6 +118,9 @@ export const useApp = () => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Initialize market simulation engine service
+  useMarketSimulation();
+
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('cth_token'));
   const [prices, setPrices] = useState<MarketPrice[]>([]);
@@ -355,6 +360,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setPrices(payload.prices);
           }
           useMarketStore.getState().setPrices(payload.prices);
+          if (payload.prices && payload.prices.length > 0) {
+            marketSimulationService.updateFromExternalFeed(payload.prices);
+          }
           
           // 2. Compute last digit for selected symbol
           const selectedSymbol = useMarketStore.getState().selectedSymbol;

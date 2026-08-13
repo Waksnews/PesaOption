@@ -30,7 +30,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin, o
         body: JSON.stringify({ email: email.trim() }),
       });
 
-      setResponseMessage(data.message || 'If an account exists, a password reset email has been sent.');
+      setResponseMessage(data.message || 'Reset instructions have been sent to your email');
       setSubmitted(true);
     } catch (err: any) {
       console.error('[FORGOT PASSWORD ERROR]', err);
@@ -125,7 +125,7 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin, o
                       <span>Sending Reset Link...</span>
                     </>
                   ) : (
-                    <span>Send Reset Link</span>
+                    <span>SEND RESET LINK</span>
                   )}
                 </button>
               </form>
@@ -138,8 +138,8 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin, o
 
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-slate-100">Check Your Inbox</h3>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  {responseMessage}
+                <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-sm mx-auto p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl text-teal-300">
+                  Reset instructions have been sent to your email
                 </p>
                 <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl text-[11px] font-mono text-slate-400 text-left mt-4 space-y-1">
                   <p className="text-emerald-400 font-bold">⏱️ Link expires in 15 minutes</p>
@@ -150,9 +150,9 @@ export const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBackToLogin, o
               <div className="pt-2">
                 <button
                   onClick={onBackToLogin}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs uppercase rounded-xl transition cursor-pointer"
+                  className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-teal-400 font-bold text-xs uppercase rounded-xl transition cursor-pointer tracking-wider"
                 >
-                  Return to Login Page
+                  RETURN TO LOGIN
                 </button>
               </div>
             </div>

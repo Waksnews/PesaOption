@@ -148,6 +148,21 @@ export interface MarketPrice {
   sparkline: number[];
 }
 
+export interface CandleData {
+  time: number; // Unix timestamp in seconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface VolumeData {
+  time: number; // Unix timestamp in seconds
+  value: number;
+  color: string;
+}
+
 export type MpesaStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
 export interface MpesaTransaction {
