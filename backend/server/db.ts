@@ -80,12 +80,23 @@ export function toSafeISOString(val: any): string | undefined {
   return undefined;
 }
 
-// Lazy/safe Prisma client instantiation
+// Lazy/safe Prisma client instantiation with connection pooling
 let prismaClientInstance: PrismaClient | null = null;
 export function getPrismaClient(): PrismaClient | null {
   if (!prismaClientInstance && process.env.DATABASE_URL) {
     try {
-      prismaClientInstance = new PrismaClient();
+      let dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl.includes('connection_limit=')) {
+        const separator = dbUrl.includes('?') ? '&' : '?';
+        dbUrl = `${dbUrl}${separator}connection_limit=5&pool_timeout=10`;
+      }
+      prismaClientInstance = new PrismaClient({
+        datasources: {
+          db: {
+            url: dbUrl,
+          },
+        },
+      });
     } catch (e) {
       console.warn('[DB] Failed to instantiate PrismaClient:', e);
     }

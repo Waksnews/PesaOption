@@ -189,9 +189,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [callApi]);
 
+  const lastRefreshTimeRef = useRef<number>(0);
+
   // Refresh current user portfolio assets, trades, and tickets
-  const refreshUserData = useCallback(async () => {
+  const refreshUserData = useCallback(async (force = false) => {
     if (!token) return;
+    const now = Date.now();
+    if (!force && now - lastRefreshTimeRef.current < 2000) {
+      return;
+    }
+    lastRefreshTimeRef.current = now;
     try {
       const [balances, txs, openP, history, tickets, notifs] = await Promise.all([
         callApi('/api/wallet/balances'),

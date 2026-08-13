@@ -221,6 +221,15 @@ export const DepositModal: React.FC = () => {
 
       const refOrInvoice = response.reference || response.invoiceId;
       setInvoiceId(refOrInvoice);
+      if (refOrInvoice) {
+        try {
+          sessionStorage.setItem('last_deposit_reference', refOrInvoice);
+          localStorage.setItem('last_deposit_reference', refOrInvoice);
+          sessionStorage.removeItem('deposit_callback_dismissed');
+        } catch (err) {
+          console.warn('[DEPOSIT MODAL] Failed to save reference to storage:', err);
+        }
+      }
       if (response.checkoutUrl || response.url) {
         setCheckoutUrl(response.checkoutUrl || response.url);
       }

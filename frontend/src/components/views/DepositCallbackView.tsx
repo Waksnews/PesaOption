@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { callApi } from '../../lib/api';
 import { CheckCircle2, ShieldAlert, Loader2, ArrowRight, Wallet, Clock, TrendingUp } from 'lucide-react';
@@ -21,15 +22,23 @@ export const DepositCallbackView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [pollCount, setPollCount] = useState(0);
 
-  // Extract reference from URL search params or hash
+  // Extract reference from URL search params, hash, or local session storage
   const getReferenceFromUrl = (): string => {
     const searchParams = new URLSearchParams(window.location.search);
-    let ref = searchParams.get('reference') || searchParams.get('ref') || searchParams.get('paymentKey') || searchParams.get('waveTransactionId');
+    let ref = searchParams.get('reference') || searchParams.get('ref') || searchParams.get('paymentKey') || searchParams.get('waveTransactionId') || searchParams.get('invoiceId');
 
     if (!ref && window.location.hash.includes('?')) {
       const hashQuery = window.location.hash.split('?')[1];
       const hashParams = new URLSearchParams(hashQuery);
-      ref = hashParams.get('reference') || hashParams.get('ref') || hashParams.get('paymentKey');
+      ref = hashParams.get('reference') || hashParams.get('ref') || hashParams.get('paymentKey') || hashParams.get('invoiceId');
+    }
+
+    if (!ref) {
+      try {
+        ref = sessionStorage.getItem('last_deposit_reference') || localStorage.getItem('last_deposit_reference') || '';
+      } catch (e) {
+        console.warn('[CALLBACK VIEW] Failed reading storage reference:', e);
+      }
     }
 
     return ref || '';
@@ -91,12 +100,37 @@ export const DepositCallbackView: React.FC = () => {
     };
   }, [reference, pollCount, refreshUserData, addToast, setIsDemo]);
 
+  const navigate = useNavigate();
+
+  const clearCallbackState = () => {
+    try {
+      sessionStorage.setItem('deposit_callback_dismissed', 'true');
+      sessionStorage.removeItem('last_deposit_reference');
+      localStorage.removeItem('last_deposit_reference');
+    } catch (err) {
+      console.warn('[CALLBACK] Storage cleanup error:', err);
+    }
+
+    if (window.history && window.history.replaceState) {
+      try {
+        const origin = window.location.origin;
+        window.history.replaceState({}, document.title, origin + '/');
+      } catch (e) {
+        console.warn('[CALLBACK] ReplaceState error:', e);
+      }
+    }
+  };
+
   const handleReturnToTradingDesk = () => {
-    window.location.hash = '#/';
+    clearCallbackState();
+    navigate('/dashboard');
+    window.location.hash = '#/dashboard';
   };
 
   const handleReturnToWallet = () => {
-    window.location.hash = '#wallet';
+    clearCallbackState();
+    navigate('/wallet');
+    window.location.hash = '#/wallet';
   };
 
   return (

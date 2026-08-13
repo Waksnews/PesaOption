@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import crypto from 'crypto';
 import { Database, getPrismaClient, hashPassword, toSafeISOString } from './server/db';
@@ -60,6 +61,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(compression());
 app.use(express.json());
 
 // Serving robots.txt for SEO Crawlers
@@ -143,6 +145,9 @@ function logActivity(userId: string | undefined, action: string, details: string
     createdAt: new Date().toISOString()
   };
   db.activityLogs.push(newLog);
+  if (db.activityLogs.length > 500) {
+    db.activityLogs.splice(0, db.activityLogs.length - 500);
+  }
   db.save();
 }
 

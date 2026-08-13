@@ -140,19 +140,19 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
   }, [currentPrice]);
 
   return (
-    <div className="relative bg-[#090C15] border border-slate-800 rounded-2xl overflow-hidden p-2 sm:p-4">
+    <div className="relative bg-[#090C15] border border-slate-800 rounded-xl overflow-hidden p-2 sm:p-3 w-full h-full min-h-[200px] flex flex-col">
       {/* Zoom in/out floating controllers on bottom-left */}
-      <div className="absolute bottom-16 left-6 flex flex-col space-y-1.5 z-10">
+      <div className="absolute bottom-3 left-3 flex flex-col space-y-1 z-10">
         <button 
           onClick={() => chartRef.current?.timeScale().zoomIn(1)}
-          className="w-7 h-7 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-sm transition"
+          className="w-6 h-6 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-xs transition"
           title="Zoom In"
         >
           +
         </button>
         <button 
           onClick={() => chartRef.current?.timeScale().zoomOut(1)}
-          className="w-7 h-7 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-sm transition"
+          className="w-6 h-6 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-xs transition"
           title="Zoom Out"
         >
           -
@@ -160,7 +160,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
       </div>
 
       {/* Chart Canvas */}
-      <div ref={chartContainerRef} className="w-full h-[260px] sm:h-[350px] md:h-[400px]" />
+      <div ref={chartContainerRef} className="w-full h-full min-h-[180px] flex-1" />
     </div>
   );
 };

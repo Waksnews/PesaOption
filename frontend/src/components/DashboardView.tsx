@@ -66,12 +66,18 @@ export const DashboardView: React.FC = () => {
     logAuth('Navigation complete');
 
     const winPath = window.location.pathname.toLowerCase();
+    const winHash = window.location.hash.toLowerCase();
     const winSearch = window.location.search;
+    const isDismissed = sessionStorage.getItem('deposit_callback_dismissed') === 'true';
 
-    if (winPath.includes('/deposit/callback') || winSearch.includes('reference=') || winSearch.includes('ref=')) {
-      if (!location.pathname.includes('/deposit/callback')) {
-        navigate(`/deposit/callback${winSearch}`, { replace: true });
-      }
+    const isCallbackUrl = !isDismissed && (
+      winPath.includes('/deposit/callback') || 
+      winHash.includes('/deposit/callback') || 
+      ((winSearch.includes('reference=') || winSearch.includes('ref=')) && (location.pathname === '/' || location.pathname === '/dashboard'))
+    );
+
+    if (isCallbackUrl && !location.pathname.includes('/deposit/callback')) {
+      navigate(`/deposit/callback${winSearch}`, { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -353,7 +359,7 @@ export const DashboardView: React.FC = () => {
         </header>
 
         {/* Outer Workspace with active Router Views */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-5">
+        <div className={`flex-1 min-h-0 flex flex-col ${(location.pathname === '/' || location.pathname === '/dashboard') ? 'p-1.5 sm:p-2.5 lg:p-3 overflow-y-auto lg:overflow-hidden' : 'p-2 sm:p-4 md:p-5 overflow-y-auto'}`}>
           <Suspense fallback={
             <div className="flex flex-col items-center justify-center py-20 text-slate-500 space-y-3">
               <RefreshCw className="w-6 h-6 animate-spin text-teal-400" />
@@ -362,6 +368,7 @@ export const DashboardView: React.FC = () => {
           }>
             <Routes>
               <Route path="/" element={<TradingDeskView />} />
+              <Route path="/dashboard" element={<TradingDeskView />} />
               <Route path="/scanner" element={<ScannerView />} />
               <Route path="/wallet" element={<WalletsView />} />
               <Route path="/deposit/callback" element={<DepositCallbackView />} />
@@ -371,8 +378,8 @@ export const DashboardView: React.FC = () => {
               <Route path="/profile" element={<ProfileView />} />
               <Route path="/settings" element={<SettingsView />} />
               <Route path="/history" element={<HistoryView />} />
-              <Route path="/admin" element={(user?.role === 'admin' || user?.role === 'owner') ? <AdminView /> : <Navigate to="/" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="/admin" element={(user?.role === 'admin' || user?.role === 'owner') ? <AdminView /> : <Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
         </div>
