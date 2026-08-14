@@ -14,7 +14,6 @@ import { useTradeStore } from '../stores/tradeStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useHistoryStore } from '../stores/historyStore';
 import { useNotificationStore } from '../stores/notificationStore';
-import { useMarketSimulation } from '../hooks/useMarketSimulation';
 import { marketSimulationService } from '../services/marketSimulationService';
 
 interface AppContextType {
@@ -118,11 +117,9 @@ export const useApp = () => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize market simulation engine service
-  useMarketSimulation();
-
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('cth_token'));
+  const initialToken = typeof window !== 'undefined' ? localStorage.getItem('cth_token') : null;
+  const [token, setToken] = useState<string | null>(initialToken);
   const [prices, setPrices] = useState<MarketPrice[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -131,7 +128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(initialToken));
   const [error, setError] = useState<string | null>(null);
 
   const [adminData, setAdminData] = useState<AppContextType['adminData']>({

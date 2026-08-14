@@ -56,13 +56,6 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       icon: TrendingUp, 
       action: () => handleNav('/') 
     },
-    ...((user?.role === 'admin' || user?.role === 'owner') ? [{
-      name: 'Admin Panel',
-      icon: Shield,
-      action: () => handleNav('/admin'),
-      color: user?.role === 'owner' ? 'text-amber-400 font-bold' : 'text-teal-400 font-bold',
-      badge: user?.role === 'owner' ? 'OWNER' : 'ADMIN'
-    }] : []),
     { 
       name: 'Wallet', 
       icon: Wallet, 
@@ -101,6 +94,13 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       action: () => handleNav('/scanner'),
       badge: 'Neural'
     },
+    ...((user?.role === 'admin' || user?.role === 'owner') ? [{
+      name: 'Admin Panel',
+      icon: Shield,
+      action: () => handleNav('/admin'),
+      color: user?.role === 'owner' ? 'text-amber-400 font-bold' : 'text-teal-400 font-bold',
+      badge: user?.role === 'owner' ? 'OWNER' : 'ADMIN'
+    }] : []),
     { 
       name: 'Support', 
       icon: MessageSquare, 

@@ -96,22 +96,11 @@ const InnerRouter: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (loading) {
-    return (
-      <div className="bg-slate-950 min-h-screen flex flex-col items-center justify-center text-slate-400 space-y-4">
-        <RefreshCw className="w-8 h-8 text-teal-400 animate-spin" />
-        <p className="font-mono text-xs uppercase tracking-widest text-slate-500 animate-pulse">
-          Establishing Secure Workspace Feed...
-        </p>
-      </div>
-    );
-  }
-
   const pageFallback = (
     <div className="bg-slate-950 min-h-screen flex flex-col items-center justify-center text-slate-400 space-y-4">
       <RefreshCw className="w-8 h-8 text-teal-400 animate-spin" />
       <p className="font-mono text-xs uppercase tracking-widest text-slate-500 animate-pulse">
-        Loading requested page...
+        Loading requested view...
       </p>
     </div>
   );
@@ -150,7 +139,19 @@ const InnerRouter: React.FC = () => {
     return <Suspense fallback={pageFallback}><DashboardView /></Suspense>;
   }
 
-  // Guest screen handling
+  // If dashboard route is explicitly targeted with token check pending
+  if (screen === 'dashboard' && loading) {
+    return (
+      <div className="bg-slate-950 min-h-screen flex flex-col items-center justify-center text-slate-400 space-y-4">
+        <RefreshCw className="w-8 h-8 text-teal-400 animate-spin" />
+        <p className="font-mono text-xs uppercase tracking-widest text-slate-500 animate-pulse">
+          Verifying Session...
+        </p>
+      </div>
+    );
+  }
+
+  // Guest screen handling - LandingView renders instantly without blocking
   if (screen === 'landing') {
     return (
       <LandingView 

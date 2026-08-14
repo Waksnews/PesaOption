@@ -9,6 +9,7 @@ import { useTradeStore } from '../../stores/tradeStore';
 import { useWalletStore } from '../../stores/walletStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useMarketSimulation } from '../../hooks/useMarketSimulation';
 import { formatCurrency, getUsdKesRate } from '../../lib/currency';
 import { TradingChart } from '../TradingChart';
 import { RealAccountConfirmModal } from '../modals/RealAccountConfirmModal';
@@ -31,6 +32,9 @@ const getPayoutRate = (category: string): number => {
 };
 
 export const TradingDeskView: React.FC = () => {
+  // Initialize continuous market simulation for live streaming
+  useMarketSimulation();
+
   const { prices, selectedSymbol, setSelectedSymbol, getMarketBySymbol } = useMarketStore();
   const { 
     openPositions, closedTrades, placeOrder, closePositionEarly,

@@ -3,32 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { createChart, AreaSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
+import React, { useEffect, useRef } from 'react';
+import { createChart, AreaSeries, CandlestickSeries, HistogramSeries, IChartApi, ISeriesApi } from 'lightweight-charts';
 import { useMarketStore } from '../stores/marketStore';
-import { BarChart2, TrendingUp, Maximize2, Zap, Clock } from 'lucide-react';
+import { marketSimulationService } from '../services/marketSimulationService';
+import { BarChart2, TrendingUp } from 'lucide-react';
 
 interface TradingChartProps {
   symbol: string;
   currentPrice: number;
 }
 
-export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, currentPrice }) => {
+export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<any | null>(null);
-  const mainSeriesRef = useRef<any | null>(null);
-  const volumeSeriesRef = useRef<any | null>(null);
-  const lastTimeRef = useRef<number>(0);
+  const chartRef = useRef<IChartApi | null>(null);
+  const mainSeriesRef = useRef<ISeriesApi<any> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<any> | null>(null);
 
   const { 
     chartType, setChartType, 
     candleTimeframe, setCandleTimeframe,
-    getCandles, getVolumes,
-    getMarketBySymbol 
+    getCandles, getVolumes
   } = useMarketStore();
-
-  const currentMarket = getMarketBySymbol(symbol);
-  const decimals = currentMarket?.category === 'forex' ? 4 : 2;
 
   // Initialize and rebuild chart when symbol or chartType changes
   useEffect(() => {
@@ -63,16 +59,17 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
         borderColor: '#1E2538',
         scaleMargins: { top: 0.1, bottom: 0.25 },
         alignLabels: true,
+        autoScale: true,
       },
       timeScale: {
         borderColor: '#1E2538',
         timeVisible: true,
         secondsVisible: true,
-        rightOffset: 10,
-        barSpacing: 8,
+        rightOffset: 8,
+        barSpacing: 9,
         minBarSpacing: 3,
         fixLeftEdge: false,
-        fixRightEdge: true,
+        fixRightEdge: false,
       },
       handleScroll: true,
       handleScale: true,
@@ -97,7 +94,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
         priceLineColor: '#00e5ff',
         priceLineVisible: true,
         crosshairMarkerVisible: true,
-        crosshairMarkerRadius: 5,
+        crosshairMarkerRadius: 4,
         crosshairMarkerBorderColor: '#00e5ff',
         crosshairMarkerBackgroundColor: '#0284c7',
       });
@@ -111,7 +108,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
 
     chart.priceScale('volumeScale').applyOptions({
       scaleMargins: {
-        top: 0.75, // volume bars occupy bottom 25% of chart canvas
+        top: 0.78, // volume bars occupy bottom 22% of chart canvas
         bottom: 0,
       },
     });
@@ -141,8 +138,6 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
         value: v.value,
         color: v.color,
       })));
-
-      lastTimeRef.current = initialCandles[initialCandles.length - 1].time;
     }
 
     chartRef.current = chart;
@@ -151,7 +146,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
 
     chart.timeScale().scrollToRealTime();
 
-    // Auto-resize handler
+    // Auto-resize handler with ResizeObserver
     const resizeObserver = new ResizeObserver((entries) => {
       if (entries.length === 0 || !chartContainerRef.current) return;
       const { width, height } = entries[0].contentRect;
@@ -160,7 +155,48 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
 
     resizeObserver.observe(chartContainerRef.current);
 
+    // Direct high-performance subscription to continuous live market tick simulation
+    const unsubscribe = marketSimulationService.subscribe((_prices, updatedSymbol, _price) => {
+      if (updatedSymbol !== symbol || !mainSeriesRef.current) return;
+
+      const candles = useMarketStore.getState().getCandles(symbol);
+      const volumes = useMarketStore.getState().getVolumes(symbol);
+
+      if (candles && candles.length > 0) {
+        const latestCandle = candles[candles.length - 1];
+        const latestVolume = volumes[volumes.length - 1];
+
+        try {
+          if (chartType === 'candlestick') {
+            mainSeriesRef.current.update({
+              time: latestCandle.time as any,
+              open: latestCandle.open,
+              high: latestCandle.high,
+              low: latestCandle.low,
+              close: latestCandle.close,
+            });
+          } else {
+            mainSeriesRef.current.update({
+              time: latestCandle.time as any,
+              value: latestCandle.close,
+            });
+          }
+
+          if (volumeSeriesRef.current && latestVolume) {
+            volumeSeriesRef.current.update({
+              time: latestVolume.time as any,
+              value: latestVolume.value,
+              color: latestVolume.color,
+            });
+          }
+        } catch {
+          // Safe catch on initial timestamp sync
+        }
+      }
+    });
+
     return () => {
+      unsubscribe();
       resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -169,56 +205,16 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
     };
   }, [symbol, chartType]);
 
-  // Update chart on live price tick
-  useEffect(() => {
-    if (!mainSeriesRef.current || currentPrice <= 0) return;
-
-    const candles = getCandles(symbol);
-    const volumes = getVolumes(symbol);
-
-    if (candles && candles.length > 0) {
-      const latestCandle = candles[candles.length - 1];
-      const latestVolume = volumes[volumes.length - 1];
-
-      try {
-        if (chartType === 'candlestick') {
-          mainSeriesRef.current.update({
-            time: latestCandle.time as any,
-            open: latestCandle.open,
-            high: latestCandle.high,
-            low: latestCandle.low,
-            close: latestCandle.close,
-          });
-        } else {
-          mainSeriesRef.current.update({
-            time: latestCandle.time as any,
-            value: latestCandle.close,
-          });
-        }
-
-        if (volumeSeriesRef.current && latestVolume) {
-          volumeSeriesRef.current.update({
-            time: latestVolume.time as any,
-            value: latestVolume.value,
-            color: latestVolume.color,
-          });
-        }
-      } catch (e) {
-        // Safe skip on timeframe sync edge cases
-      }
-    }
-  }, [currentPrice, symbol, chartType]);
-
   return (
-    <div className="relative bg-[#070b16] border border-slate-800 rounded-xl overflow-hidden p-2.5 w-full h-full min-h-[220px] flex flex-col group">
+    <div className="relative bg-[#070b16] border border-slate-800 rounded-xl overflow-hidden p-2 w-full h-full min-h-[200px] flex flex-col group">
       {/* Chart Top Control Header */}
-      <div className="flex items-center justify-between mb-2 px-1 z-10 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-1.5 px-1 z-10 flex-wrap gap-2">
         <div className="flex items-center space-x-2">
           {/* Chart Type Toggle */}
           <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
             <button
               onClick={() => setChartType('area')}
-              className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center space-x-1 ${
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition flex items-center space-x-1 cursor-pointer ${
                 chartType === 'area'
                   ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30'
                   : 'text-slate-400 hover:text-slate-200'
@@ -229,7 +225,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
             </button>
             <button
               onClick={() => setChartType('candlestick')}
-              className={`px-2 py-1 rounded text-[10px] font-bold transition flex items-center space-x-1 ${
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition flex items-center space-x-1 cursor-pointer ${
                 chartType === 'candlestick'
                   ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30'
                   : 'text-slate-400 hover:text-slate-200'
@@ -246,7 +242,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
               <button
                 key={tf}
                 onClick={() => setCandleTimeframe(tf)}
-                className={`px-2 py-0.5 rounded transition ${
+                className={`px-2 py-0.5 rounded transition cursor-pointer ${
                   candleTimeframe === tf
                     ? 'bg-slate-800 text-teal-300 font-bold'
                     : 'text-slate-400 hover:text-slate-200'
@@ -262,23 +258,32 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
         <div className="flex items-center space-x-2">
           <div className="flex items-center space-x-1.5 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-mono">
             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
-            <span className="font-bold">LIVE TICK</span>
+            <span className="font-bold">LIVE STREAM</span>
           </div>
         </div>
       </div>
 
       {/* Floating Zoom overlay buttons on bottom-left */}
-      <div className="absolute bottom-3 left-3 flex flex-col space-y-1 z-10 opacity-70 group-hover:opacity-100 transition">
+      <div className="absolute bottom-2.5 left-2.5 flex flex-col space-y-1 z-10 opacity-70 group-hover:opacity-100 transition">
         <button
-          onClick={() => chartRef.current?.timeScale().zoomIn(1)}
-          className="w-6 h-6 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-xs transition"
+          onClick={() => {
+            if (!chartRef.current) return;
+            const timeScale = chartRef.current.timeScale();
+            const currentSpacing = timeScale.width() > 0 ? 12 : 9;
+            timeScale.applyOptions({ barSpacing: currentSpacing + 2 });
+          }}
+          className="w-5 h-5 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-[10px] transition"
           title="Zoom In"
         >
           +
         </button>
         <button
-          onClick={() => chartRef.current?.timeScale().zoomOut(1)}
-          className="w-6 h-6 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-xs transition"
+          onClick={() => {
+            if (!chartRef.current) return;
+            const timeScale = chartRef.current.timeScale();
+            timeScale.applyOptions({ barSpacing: Math.max(3, 7) });
+          }}
+          className="w-5 h-5 bg-slate-900/90 border border-slate-800 hover:bg-slate-800 text-slate-200 font-bold rounded flex items-center justify-center cursor-pointer select-none text-[10px] transition"
           title="Zoom Out"
         >
           -
@@ -286,7 +291,7 @@ export const TradingChartComponent: React.FC<TradingChartProps> = ({ symbol, cur
       </div>
 
       {/* Chart Canvas */}
-      <div ref={chartContainerRef} className="w-full h-full min-h-[190px] flex-1" />
+      <div ref={chartContainerRef} className="w-full h-full min-h-[170px] flex-1" />
     </div>
   );
 };

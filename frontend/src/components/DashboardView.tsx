@@ -115,18 +115,21 @@ export const DashboardView: React.FC = () => {
         <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-3 sm:px-6 flex items-center justify-between relative z-[100]">
           
           {/* Top Left Menu Trigger */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3 sm:space-x-4">
             <button 
+              id="top-nav-menu-btn"
               onClick={() => setDrawerOpen(true)}
-              className="p-2 hover:bg-slate-900 rounded-xl text-slate-400 hover:text-slate-100 transition cursor-pointer"
+              className="p-2 sm:p-2.5 bg-slate-800/90 hover:bg-slate-700/90 active:scale-95 border border-slate-700/70 rounded-xl text-teal-400 hover:text-teal-300 shadow-md shadow-black/40 transition flex items-center justify-center cursor-pointer shrink-0 z-10"
+              title="Open Navigation Menu"
+              aria-label="Open Navigation Menu"
             >
-              <Menu className="w-5.5 h-5.5" />
+              <Menu className="w-5 h-5 text-teal-400" />
             </button>
             <div 
-              onClick={() => setDrawerOpen(true)}
-              className="flex items-center space-x-3 cursor-pointer select-none"
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-2.5 cursor-pointer select-none"
             >
-              <div className="w-8 h-8 bg-gradient-to-tr from-[#2563EB] to-[#10B981] rounded-xl flex items-center justify-center shadow-lg shadow-[#2563EB]/10">
+              <div className="w-8 h-8 bg-gradient-to-tr from-[#2563EB] to-[#10B981] rounded-xl flex items-center justify-center shadow-lg shadow-[#2563EB]/10 shrink-0">
                 <TrendingUp className="w-4.5 h-4.5 text-slate-950 font-black" />
               </div>
               <span className="font-sans font-black text-xs uppercase tracking-widest text-slate-100 hidden sm:inline-block">PesaOption</span>
