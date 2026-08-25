@@ -15,7 +15,7 @@ export class MarketSimulationService {
   private isRunning: boolean = false;
   private subscribersCount: number = 0;
   private listeners: Set<TickListener> = new Set();
-  private tickIntervalMs: number = 350; // Smooth ~350ms continuous market stream
+  private tickIntervalMs: number = 1500; // Calm and readable ~1.5s market tick pace
   private tickCounter: number = 0;
 
   // Primary markets definition

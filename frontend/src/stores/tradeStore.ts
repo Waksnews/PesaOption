@@ -72,14 +72,9 @@ export const useTradeStore = create<TradeState>((set, get) => ({
   winLossNotificationQueue: [],
 
   setOpenPositions: (openPositions) => {
-    const prevOpen = get().openPositions;
-    set({ openPositions });
-
-    // Detect resolved positions by comparing lists
-    // Wait, let's see if we can detect which positions disappeared
-    if (prevOpen.length > 0 && openPositions.length < prevOpen.length) {
-      // Something was resolved
-    }
+    // Keep strictly open positions
+    const validOpen = openPositions.filter((p) => p.status === 'open');
+    set({ openPositions: validOpen });
   },
   setClosedTrades: (closedTrades) => {
     const prevClosed = get().closedTrades;

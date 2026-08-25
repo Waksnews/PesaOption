@@ -361,17 +361,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             marketSimulationService.updateFromExternalFeed(payload.prices);
           }
           
-          // 2. Compute last digit for selected symbol
-          const selectedSymbol = useMarketStore.getState().selectedSymbol;
-          const currentPriceItem = payload.prices.find((p: any) => p.symbol === selectedSymbol);
-          if (currentPriceItem) {
-            const decimals = currentPriceItem.category === 'forex' ? 4 : 2;
-            const priceStr = currentPriceItem.price.toFixed(decimals);
-            const lastDigit = parseInt(priceStr[priceStr.length - 1], 10) || 0;
-            useTradeStore.getState().addDigit(lastDigit);
-          }
-
-          // 3. Update user's open positions if changed
+          // 2. Update user's open positions if changed
           if (payload.activeTrades && token && userId) {
             const userOpenTrades = payload.activeTrades.filter((t: Trade) => t.userId === userId);
             const currentPositions = useTradeStore.getState().openPositions;

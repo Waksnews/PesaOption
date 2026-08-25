@@ -354,8 +354,8 @@ function simulateTick() {
   });
 }
 
-// Tick the prices every 1 second
-setInterval(simulateTick, 1000);
+// Tick the prices and settle contracts at steady 1.5-second ticks
+setInterval(simulateTick, 1500);
 
 // Active SSE Connections
 let sseClients: express.Response[] = [];
