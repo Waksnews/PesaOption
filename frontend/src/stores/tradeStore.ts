@@ -43,7 +43,13 @@ export interface TradeState {
   clearWinLossQueue: (id: string) => void;
 
   // Trading Actions
-  placeOrder: (symbol: string, type: 'buy' | 'sell') => Promise<boolean>;
+  placeOrder: (symbol: string, type: 'buy' | 'sell', overrides?: {
+    prediction?: string;
+    quantity?: number;
+    contractType?: 'rise_fall' | 'even_odd' | 'over_under' | 'matches_differ' | 'spot';
+    durationSeconds?: number;
+    predictionDigit?: number;
+  }) => Promise<boolean>;
   closePositionEarly: (tradeId: string) => Promise<boolean>;
   getDigitStats: () => { digit: number; count: number; percentage: number }[];
 }
@@ -131,14 +137,15 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     winLossNotificationQueue: state.winLossNotificationQueue.filter(x => x.id !== id)
   })),
 
-  placeOrder: async (symbol, type) => {
-    const { 
-      contractMode, activeContractType, selectedPrediction, optionDuration, 
-      predictionDigit, tradeQty, tradeLeverage 
-    } = get();
-
+  placeOrder: async (symbol, type, overrides) => {
+    const state = get();
     const isDemo = useWalletStore.getState().isDemo;
-    const qty = parseFloat(tradeQty);
+
+    const effContractType = overrides?.contractType || (state.contractMode === 'option' ? state.activeContractType : 'spot');
+    const effDuration = overrides?.durationSeconds ?? state.optionDuration;
+    const effPredDigit = overrides?.predictionDigit ?? state.predictionDigit;
+    const rawPred = overrides?.prediction ?? state.selectedPrediction;
+    const qty = overrides?.quantity ?? parseFloat(state.tradeQty);
 
     if (isNaN(qty) || qty <= 0) {
       set({ tradeMsg: { text: 'Invalid order stake amount.', type: 'error' } });
@@ -161,12 +168,12 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     try {
       set({ tradeMsg: null });
       
-      // Binary Option Mode
-      let predictionValue = selectedPrediction;
-      if (activeContractType === 'over_under') {
-        predictionValue = `${selectedPrediction}:${predictionDigit}`;
-      } else if (activeContractType === 'matches_differ') {
-        predictionValue = `${selectedPrediction}:${predictionDigit}`;
+      // Binary Option Mode prediction formatting
+      let predictionValue = rawPred;
+      if (effContractType === 'over_under' || effContractType === 'matches_differ') {
+        if (!predictionValue.includes(':')) {
+          predictionValue = `${predictionValue}:${effPredDigit}`;
+        }
       }
 
       const res = await callApi<{ message: string; trade: Trade; wallets: any }>('/api/trade/open', {
@@ -176,15 +183,15 @@ export const useTradeStore = create<TradeState>((set, get) => ({
           type,
           quantity: qty,
           isDemo,
-          contractType: contractMode === 'option' ? activeContractType : 'spot',
-          prediction: contractMode === 'option' ? predictionValue : undefined,
-          durationSeconds: contractMode === 'option' ? optionDuration : undefined
+          contractType: effContractType,
+          prediction: effContractType !== 'spot' ? predictionValue : undefined,
+          durationSeconds: effContractType !== 'spot' ? effDuration : undefined
         })
       });
 
       if (res && res.trade) {
-        set((state) => ({
-          openPositions: [res.trade, ...state.openPositions.filter((p) => p.id !== res.trade.id)]
+        set((s) => ({
+          openPositions: [res.trade, ...s.openPositions.filter((p) => p.id !== res.trade.id)]
         }));
       }
 
@@ -192,16 +199,17 @@ export const useTradeStore = create<TradeState>((set, get) => ({
         useWalletStore.getState().setWallets(res.wallets);
       }
 
-      // Clear msg, trigger sound
+      // Clear msg, trigger toast
       useNotificationStore.getState().addToast(
         'Contract Purchased',
-        `Placed $${qty} ${type.toUpperCase()} contract on ${symbol}. Expiry: ${optionDuration}s.`,
+        `Placed $${qty.toFixed(2)} ${type.toUpperCase()} (${predictionValue}) contract on ${symbol}. Expiry: ${effDuration}s.`,
         'info'
       );
 
       return true;
     } catch (err: any) {
       set({ tradeMsg: { text: err.message || 'Ledger rejected order fill.', type: 'error' } });
+      useNotificationStore.getState().addToast('Order Failed', err.message || 'Could not place trade.', 'error');
       return false;
     }
   },

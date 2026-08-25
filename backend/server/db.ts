@@ -422,12 +422,7 @@ export class Database {
         this.save();
       }
 
-      // Ensure demo USD balances are capped at max $5,000
-      this.data.wallets.forEach(w => {
-        if (w.asset === 'USD' && w.demoBalance > 5000) {
-          w.demoBalance = 5000;
-        }
-      });
+      // Demo USD balances can grow freely based on user trading
     } catch (error) {
       console.error('[DB] Error loading local json database, initializing default schema:', error);
       this.data = { ...defaultSchema };

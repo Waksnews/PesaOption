@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMarketStore } from '../../stores/marketStore';
 import { useTradeStore } from '../../stores/tradeStore';
@@ -63,6 +63,27 @@ export const TradingDeskView: React.FC = () => {
   const [targetProfit, setTargetProfit] = useState<number>(200);
   const [stopLoss, setStopLoss] = useState<number>(999);
   const [multiplier, setMultiplier] = useState<number>(2);
+
+  // Bot session & risk tracking state
+  const [botSessionStats, setBotSessionStats] = useState<{
+    sessionProfit: number;
+    tradesCount: number;
+    wins: number;
+    losses: number;
+    status: 'idle' | 'running' | 'paused' | 'target_reached' | 'stop_loss_reached';
+    lastAction: string;
+    countdown: number;
+  }>({
+    sessionProfit: 0,
+    tradesCount: 0,
+    wins: 0,
+    losses: 0,
+    status: 'idle',
+    lastAction: 'Bot ready. Press START AUTO BOT to begin algorithmic execution.',
+    countdown: 3,
+  });
+
+  const [botSessionStartTime, setBotSessionStartTime] = useState<number>(Date.now());
 
   // Modals & Bottom Sheets
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
@@ -152,7 +173,33 @@ export const TradingDeskView: React.FC = () => {
     ? `KSh ${(matchesPayoutUsd * rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : `$${matchesPayoutUsd.toFixed(2)}`;
 
-  // Execute trade order
+  // Refs for Bot Engine to prevent interval thrashing and race conditions
+  const isExecutingTradeRef = useRef<boolean>(false);
+  const tradingBotActiveRef = useRef<boolean>(tradingBotActive);
+  tradingBotActiveRef.current = tradingBotActive;
+
+  const currentMarketRef = useRef(currentMarket);
+  currentMarketRef.current = currentMarket;
+
+  const activeContractTypeRef = useRef(activeContractType);
+  activeContractTypeRef.current = activeContractType;
+
+  const optionDurationRef = useRef(optionDuration);
+  optionDurationRef.current = optionDuration;
+
+  const predictionDigitRef = useRef(predictionDigit);
+  predictionDigitRef.current = predictionDigit;
+
+  const stakeUsdRef = useRef(stakeUsd);
+  stakeUsdRef.current = stakeUsd;
+
+  const openPositionsRef = useRef(openPositions);
+  openPositionsRef.current = openPositions;
+
+  const digitHistoryRef = useRef(digitHistory);
+  digitHistoryRef.current = digitHistory;
+
+  // Execute trade order (for manual desk)
   const handleTrade = async (prediction: string, type: 'buy' | 'sell') => {
     playSound('trade');
     setSelectedPrediction(prediction);
@@ -168,26 +215,223 @@ export const TradingDeskView: React.FC = () => {
       return;
     }
 
-    const ok = await placeOrder(currentMarket.symbol, type);
-    if (ok) {
-      // Order placed successfully
-    }
+    await placeOrder(currentMarket.symbol, type, {
+      prediction,
+      quantity: stakeUsd,
+      contractType: activeContractType,
+      durationSeconds: optionDuration,
+      predictionDigit: predictionDigit
+    });
   };
 
-  // Bot loop runner
-  useEffect(() => {
-    let interval: any = null;
-    if (tradingBotActive) {
-      interval = setInterval(() => {
-        const randomPred = Math.random() > 0.5 ? 'even' : 'odd';
-        const type = randomPred === 'even' ? 'buy' : 'sell';
-        handleTrade(randomPred, type);
-      }, (optionDuration + 3) * 1000);
+  // Start or resume Bot
+  const handleStartBot = () => {
+    playSound('click');
+    setExecutionMode('auto');
+    setTradingBotActive(true);
+    if (botSessionStats.status === 'target_reached' || botSessionStats.status === 'stop_loss_reached') {
+      // Reset session if previously finished
+      setBotSessionStartTime(Date.now());
+      setBotSessionStats({
+        sessionProfit: 0,
+        tradesCount: 0,
+        wins: 0,
+        losses: 0,
+        status: 'running',
+        lastAction: 'Session started. Analyzing tick patterns & volatility...',
+        countdown: 2,
+      });
+    } else {
+      setBotSessionStats(prev => ({
+        ...prev,
+        status: 'running',
+        lastAction: 'Bot active. Analyzing tick patterns & volatility...',
+        countdown: 2
+      }));
     }
+    addToast('Auto Bot Activated', `Bot running with Target: $${targetProfit} | SL: $${stopLoss}`, 'info');
+  };
+
+  // Stop Bot manually anytime
+  const handleStopBot = () => {
+    playSound('click');
+    setTradingBotActive(false);
+    setBotSessionStats(prev => ({
+      ...prev,
+      status: 'paused',
+      lastAction: 'Bot halted by user.'
+    }));
+    addToast('Auto Bot Paused', 'Automated trading has been stopped.', 'info');
+  };
+
+  // Reset Bot Session
+  const handleResetBotSession = () => {
+    playSound('click');
+    setBotSessionStartTime(Date.now());
+    setBotSessionStats({
+      sessionProfit: 0,
+      tradesCount: 0,
+      wins: 0,
+      losses: 0,
+      status: 'idle',
+      lastAction: 'Session reset. Ready to launch.',
+      countdown: 2,
+    });
+    addToast('Session Reset', 'Bot statistics and session profit reset.', 'info');
+  };
+
+  // Monitor Closed Trades for TP / SL Reached
+  useEffect(() => {
+    const sessionTrades = closedTrades.filter(t => {
+      const tTime = new Date(t.closedAt || t.createdAt).getTime();
+      return tTime >= botSessionStartTime;
+    });
+
+    if (sessionTrades.length > 0) {
+      const netPnl = sessionTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+      const winsCount = sessionTrades.filter(t => (t.pnl || 0) > 0).length;
+      const lossesCount = sessionTrades.filter(t => (t.pnl || 0) <= 0).length;
+
+      // Check Target Profit
+      if (netPnl >= targetProfit && tradingBotActive) {
+        setTradingBotActive(false);
+        setBotSessionStats(prev => ({
+          ...prev,
+          sessionProfit: netPnl,
+          tradesCount: sessionTrades.length,
+          wins: winsCount,
+          losses: lossesCount,
+          status: 'target_reached',
+          lastAction: `🎯 TARGET PROFIT REACHED (+$${netPnl.toFixed(2)})! Bot halted automatically to secure gains.`
+        }));
+        playSound('trade');
+        addToast('🎯 Target Profit Reached!', `Bot hit your target of $${targetProfit} with +$${netPnl.toFixed(2)} profit!`, 'success');
+        return;
+      }
+
+      // Check Stop Loss
+      if (netPnl <= -Math.abs(stopLoss) && tradingBotActive) {
+        setTradingBotActive(false);
+        setBotSessionStats(prev => ({
+          ...prev,
+          sessionProfit: netPnl,
+          tradesCount: sessionTrades.length,
+          wins: winsCount,
+          losses: lossesCount,
+          status: 'stop_loss_reached',
+          lastAction: `⚠️ STOP LOSS REACHED (-$${Math.abs(netPnl).toFixed(2)})! Bot halted automatically to protect capital.`
+        }));
+        playSound('trade');
+        addToast('⚠️ Stop Loss Reached!', `Bot stopped at -$${Math.abs(netPnl).toFixed(2)} to protect your balance.`, 'error');
+        return;
+      }
+
+      // Update normal stats
+      setBotSessionStats(prev => ({
+        ...prev,
+        sessionProfit: netPnl,
+        tradesCount: sessionTrades.length,
+        wins: winsCount,
+        losses: lossesCount,
+      }));
+    }
+  }, [closedTrades, botSessionStartTime, targetProfit, stopLoss, tradingBotActive]);
+
+  // Bot Tick & Trade Execution Engine (Continuous Non-Thrashing Loop)
+  useEffect(() => {
+    if (!tradingBotActive) return;
+
+    const timer = setInterval(async () => {
+      // If there is currently an open position, wait for it to settle
+      if (openPositionsRef.current.length > 0) {
+        setBotSessionStats(prev => ({
+          ...prev,
+          lastAction: `Trade active in market (${openPositionsRef.current[0].symbol}). Awaiting settlement...`,
+          countdown: optionDurationRef.current
+        }));
+        return;
+      }
+
+      if (isExecutingTradeRef.current) {
+        return;
+      }
+
+      setBotSessionStats(prev => {
+        const nextCountdown = prev.countdown > 1 ? prev.countdown - 1 : 0;
+        return {
+          ...prev,
+          countdown: nextCountdown,
+          lastAction: nextCountdown > 0 
+            ? `Analyzing algorithmic signals (${nextCountdown}s)...`
+            : prev.lastAction
+        };
+      });
+
+      // When countdown reaches 0 and ready, fire order
+      setBotSessionStats(prev => {
+        if (prev.countdown <= 1 && !isExecutingTradeRef.current && openPositionsRef.current.length === 0) {
+          isExecutingTradeRef.current = true;
+
+          const contractType = activeContractTypeRef.current;
+          const symbol = currentMarketRef.current.symbol;
+          const stake = stakeUsdRef.current;
+          const duration = optionDurationRef.current;
+          const predDigit = predictionDigitRef.current;
+
+          let chosenPred = 'rise';
+          let chosenType: 'buy' | 'sell' = 'buy';
+
+          if (contractType === 'even_odd') {
+            const history = digitHistoryRef.current;
+            const evenCount = history.filter(d => d % 2 === 0).length;
+            const oddCount = history.filter(d => d % 2 !== 0).length;
+            chosenPred = evenCount >= oddCount ? 'even' : 'odd';
+            chosenType = chosenPred === 'even' ? 'buy' : 'sell';
+          } else if (contractType === 'matches_differ') {
+            chosenPred = 'differs';
+            chosenType = 'sell';
+          } else if (contractType === 'over_under') {
+            const history = digitHistoryRef.current;
+            const lastDigit = history[history.length - 1] ?? 5;
+            chosenPred = lastDigit < 5 ? 'over' : 'under';
+            chosenType = chosenPred === 'over' ? 'buy' : 'sell';
+          } else {
+            // Rise / Fall - determine from recent price movement
+            const history = digitHistoryRef.current;
+            const last = history[history.length - 1] ?? 5;
+            const prevDigit = history[history.length - 2] ?? 5;
+            chosenPred = last >= prevDigit ? 'rise' : 'fall';
+            chosenType = chosenPred === 'rise' ? 'buy' : 'sell';
+          }
+
+          // Execute order asynchronously
+          playSound('trade');
+          placeOrder(symbol, chosenType, {
+            prediction: chosenPred,
+            quantity: stake,
+            contractType: contractType,
+            durationSeconds: duration,
+            predictionDigit: predDigit
+          }).finally(() => {
+            isExecutingTradeRef.current = false;
+          });
+
+          return {
+            ...prev,
+            countdown: duration + 1,
+            tradesCount: prev.tradesCount + 1,
+            lastAction: `⚡ Bot executed ${chosenPred.toUpperCase()} on ${symbol} ($${stake.toFixed(2)})`
+          };
+        }
+        return prev;
+      });
+
+    }, 1000);
+
     return () => {
-      if (interval) clearInterval(interval);
+      clearInterval(timer);
     };
-  }, [tradingBotActive, optionDuration, stakeValue, tradeCurrency, selectedSymbol]);
+  }, [tradingBotActive, placeOrder]);
 
   // Filtered asset list
   const filteredMarkets = useMemo(() => {
@@ -692,142 +936,321 @@ export const TradingDeskView: React.FC = () => {
             </div>
           )}
 
-          {/* 6. MAIN TRADE ACTIONS (Large Side-by-Side High-Contrast Touch Buttons) */}
-          <div className="grid grid-cols-2 gap-2 pt-0.5">
-            
-            {/* Case A: Even / Odd Mode */}
-            {activeContractType === 'even_odd' && (
-              <>
+          {/* 6. MAIN TRADE ACTIONS: DEDICATED AUTO BOT ENGINE VS MANUAL TRADING DESK */}
+          {executionMode === 'auto' ? (
+            /* AUTO TRADING ENGINE CONSOLE */
+            <div className="bg-[#070B16] border border-slate-850 rounded-2xl p-3 space-y-2.5 shadow-xl">
+              
+              {/* Bot Status Header & Live Pulse */}
+              <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+                <div className="flex items-center space-x-2">
+                  <div className="relative flex items-center justify-center">
+                    {tradingBotActive ? (
+                      <>
+                        <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-teal-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500"></span>
+                      </>
+                    ) : (
+                      <span className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-600"></span>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-slate-100">
+                        {tradingBotActive ? 'AI Bot Running' : botSessionStats.status === 'target_reached' ? 'Target Profit Reached' : botSessionStats.status === 'stop_loss_reached' ? 'Stop Loss Reached' : 'Bot Idle / Paused'}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                        {activeContractType.replace('_', ' ').toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-sans text-slate-400 truncate max-w-[240px] sm:max-w-xs">
+                      {botSessionStats.lastAction}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Reset Session Button */}
                 <button
                   type="button"
-                  onClick={() => handleTrade('even', 'buy')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
+                  onClick={handleResetBotSession}
+                  title="Reset Bot Session Stats"
+                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition cursor-pointer flex items-center space-x-1 text-[10px] font-bold"
                 >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Even</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
-                  </span>
+                  <RefreshCw className="w-3 h-3" />
+                  <span className="hidden sm:inline">Reset</span>
                 </button>
+              </div>
 
+              {/* TARGET PROFIT & STOP LOSS LIVE TRACKER */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Target Profit Card */}
+                <div className="bg-slate-950/80 border border-teal-500/30 rounded-xl p-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400 uppercase font-bold">Target Profit</span>
+                    <span className="font-extrabold text-teal-400">${targetProfit}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs sm:text-sm font-mono font-black text-slate-100">
+                      {botSessionStats.sessionProfit >= 0 ? `+$${botSessionStats.sessionProfit.toFixed(2)}` : `-$${Math.abs(botSessionStats.sessionProfit).toFixed(2)}`}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-teal-400">
+                      {Math.min(100, Math.max(0, (botSessionStats.sessionProfit / targetProfit) * 100)).toFixed(0)}%
+                    </span>
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-all duration-300 rounded-full"
+                      style={{ width: `${Math.min(100, Math.max(0, (botSessionStats.sessionProfit / targetProfit) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stop Loss Card */}
+                <div className="bg-slate-950/80 border border-rose-500/30 rounded-xl p-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400 uppercase font-bold">Stop Loss</span>
+                    <span className="font-extrabold text-rose-400">-${stopLoss}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs sm:text-sm font-mono font-black text-slate-100">
+                      {botSessionStats.sessionProfit < 0 ? `-$${Math.abs(botSessionStats.sessionProfit).toFixed(2)}` : '$0.00'}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-slate-400">
+                      {Math.max(0, 100 - ((-Math.min(0, botSessionStats.sessionProfit) / stopLoss) * 100)).toFixed(0)}% Safe
+                    </span>
+                  </div>
+                  {/* Risk Bar */}
+                  <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-amber-500 to-rose-500 transition-all duration-300 rounded-full"
+                      style={{ width: `${Math.min(100, Math.max(0, (-Math.min(0, botSessionStats.sessionProfit) / stopLoss) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Alert Banners */}
+              {botSessionStats.status === 'target_reached' && (
+                <div className="bg-emerald-950/40 border border-emerald-500/60 rounded-xl p-2 flex items-center justify-between text-emerald-300">
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span className="text-xs font-bold font-sans">
+                      Target Profit Reached (+${botSessionStats.sessionProfit.toFixed(2)})! Bot halted to secure profits.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {botSessionStats.status === 'stop_loss_reached' && (
+                <div className="bg-rose-950/40 border border-rose-500/60 rounded-xl p-2 flex items-center justify-between text-rose-300">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span className="text-xs font-bold font-sans">
+                      Stop Loss Limit Reached (-${Math.abs(botSessionStats.sessionProfit).toFixed(2)})! Bot halted to protect balance.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* ONE-CLICK INSTANT START / STOP CONTROL BUTTON */}
+              {tradingBotActive ? (
                 <button
                   type="button"
-                  onClick={() => handleTrade('odd', 'sell')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
+                  onClick={handleStopBot}
+                  className="w-full py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-red-600 to-rose-600 hover:from-rose-500 hover:to-red-500 active:scale-[0.99] text-white font-black text-sm sm:text-base uppercase tracking-wider shadow-lg shadow-rose-600/30 transition cursor-pointer flex flex-col items-center justify-center space-y-0.5 border border-rose-400/40"
                 >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Odd</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
+                  <div className="flex items-center space-x-2">
+                    <Square className="w-4 h-4 fill-white text-white animate-pulse" />
+                    <span>STOP AUTO BOT</span>
+                  </div>
+                  <span className="text-[10px] font-sans font-medium text-rose-100/90 lowercase">
+                    tap anytime to halt automated trading immediately
                   </span>
                 </button>
-              </>
-            )}
-
-            {/* Case B: Matches / Differs Mode */}
-            {activeContractType === 'matches_differ' && (
-              <>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => handleTrade('matches', 'buy')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-purple-500/20 flex flex-col items-center justify-center space-y-0.5 border border-purple-400/40"
+                  onClick={handleStartBot}
+                  className="w-full py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-400 hover:from-teal-400 hover:to-emerald-400 active:scale-[0.99] text-slate-950 font-black text-sm sm:text-base uppercase tracking-wider shadow-lg shadow-teal-500/30 transition cursor-pointer flex flex-col items-center justify-center space-y-0.5 border border-teal-300/40"
                 >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Matches {predictionDigit}</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
-                    {matchesPayoutDisplay} (9.5x)
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-purple-200">
-                    +850% Jackpot
+                  <div className="flex items-center space-x-2">
+                    <Play className="w-4 h-4 fill-slate-950 text-slate-950" />
+                    <span>{botSessionStats.status === 'target_reached' || botSessionStats.status === 'stop_loss_reached' ? 'RESTART AUTO BOT' : 'START AUTO BOT'}</span>
+                  </div>
+                  <span className="text-[10px] font-sans font-extrabold text-slate-950/80 lowercase">
+                    runs automated trades • target: ${targetProfit} • sl: ${stopLoss}
                   </span>
                 </button>
+              )}
 
-                <button
-                  type="button"
-                  onClick={() => handleTrade('differs', 'sell')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
-                >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Differs ≠ {predictionDigit}</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
+              {/* Bot Session Performance Metrics Grid */}
+              <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-1.5 flex flex-col items-center">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold">Trades</span>
+                  <span className="text-xs font-mono font-extrabold text-slate-200">{botSessionStats.tradesCount}</span>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-1.5 flex flex-col items-center">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold">W / L</span>
+                  <span className="text-xs font-mono font-extrabold text-slate-200">
+                    <span className="text-teal-400">{botSessionStats.wins}</span>/<span className="text-rose-400">{botSessionStats.losses}</span>
                   </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-1.5 flex flex-col items-center">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold">Win Rate</span>
+                  <span className="text-xs font-mono font-extrabold text-teal-300">
+                    {botSessionStats.tradesCount > 0 
+                      ? `${((botSessionStats.wins / botSessionStats.tradesCount) * 100).toFixed(0)}%` 
+                      : '0%'}
                   </span>
-                </button>
-              </>
-            )}
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-1.5 flex flex-col items-center">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold">Next Trade</span>
+                  <span className="text-xs font-mono font-extrabold text-cyan-300">
+                    {tradingBotActive ? `${botSessionStats.countdown}s` : 'Paused'}
+                  </span>
+                </div>
+              </div>
 
-            {/* Case C: Over / Under Mode */}
-            {activeContractType === 'over_under' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleTrade('over', 'buy')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
-                >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Over &gt; {predictionDigit}</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
-                  </span>
-                </button>
+            </div>
+          ) : (
+            /* MANUAL TRADING DESK (User Trades Manually) */
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              
+              {/* Case A: Even / Odd Mode */}
+              {activeContractType === 'even_odd' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('even', 'buy')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Even</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleTrade('under', 'sell')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
-                >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Under &lt; {predictionDigit}</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
-                  </span>
-                </button>
-              </>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('odd', 'sell')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Odd</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+                </>
+              )}
 
-            {/* Case D: Rise / Fall Mode */}
-            {activeContractType === 'rise_fall' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleTrade('rise', 'buy')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
-                >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Rise ▲</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
-                    +{(yieldRate * 100).toFixed(1)}% Return
-                  </span>
-                </button>
+              {/* Case B: Matches / Differs Mode */}
+              {activeContractType === 'matches_differ' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('matches', 'buy')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-purple-500/20 flex flex-col items-center justify-center space-y-0.5 border border-purple-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Matches {predictionDigit}</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
+                      {matchesPayoutDisplay} (9.5x)
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-purple-200">
+                      +850% Jackpot
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleTrade('fall', 'sell')}
-                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-rose-500/20 flex flex-col items-center justify-center space-y-0.5 border border-rose-400/40"
-                >
-                  <span className="text-base sm:text-lg font-black tracking-tight">Fall ▼</span>
-                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
-                    {estimatedPayoutDisplay} Payout
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-rose-200">
-                    +{(yieldRate * 100).toFixed(1)}% Return
-                  </span>
-                </button>
-              </>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('differs', 'sell')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Differs ≠ {predictionDigit}</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+                </>
+              )}
 
-          </div>
+              {/* Case C: Over / Under Mode */}
+              {activeContractType === 'over_under' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('over', 'buy')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Over &gt; {predictionDigit}</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('under', 'sell')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Under &lt; {predictionDigit}</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+                </>
+              )}
+
+              {/* Case D: Rise / Fall Mode */}
+              {activeContractType === 'rise_fall' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('rise', 'buy')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Rise ▲</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleTrade('fall', 'sell')}
+                    className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-rose-500/20 flex flex-col items-center justify-center space-y-0.5 border border-rose-400/40"
+                  >
+                    <span className="text-base sm:text-lg font-black tracking-tight">Fall ▼</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
+                      {estimatedPayoutDisplay} Payout
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-rose-200">
+                      +{(yieldRate * 100).toFixed(1)}% Return
+                    </span>
+                  </button>
+                </>
+              )}
+
+            </div>
+          )}
 
         </div>
 

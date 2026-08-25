@@ -309,7 +309,7 @@ function simulateTick() {
             const usdWallet = db.wallets.find(w => w.userId === trade.userId && w.asset === 'USD');
             if (usdWallet) {
               if (trade.isDemo) {
-                usdWallet.demoBalance = Math.min(5000, Number((usdWallet.demoBalance + returnAmount).toFixed(2)));
+                usdWallet.demoBalance = Number((usdWallet.demoBalance + returnAmount).toFixed(2));
               } else {
                 usdWallet.balance = Number((usdWallet.balance + returnAmount).toFixed(2));
               }
@@ -870,15 +870,7 @@ app.post('/api/wallet/deposit', authenticate, (req: any, res) => {
     });
   }
 
-  if (wallet.demoBalance >= 5000) {
-    return res.status(400).json({ error: 'Demo account balance is capped at maximum of $5,000.' });
-  }
-  if (wallet.demoBalance + valAmount > 5000) {
-    const maxAllowed = 5000 - wallet.demoBalance;
-    return res.status(400).json({ error: `Deposit exceeds maximum demo account limit of $5,000. Maximum topup allowed: $${maxAllowed.toFixed(2)}` });
-  }
-  
-  wallet.demoBalance = Math.min(5000, wallet.demoBalance + valAmount);
+  wallet.demoBalance = Number((wallet.demoBalance + valAmount).toFixed(2));
   createNotification(req.userId, 'Demo USD Credited', `Your USD demo wallet was topped up with $${valAmount.toLocaleString()}`);
 
   const prisma = getPrismaClient();
@@ -1212,7 +1204,7 @@ app.post('/api/trade/close', authenticate, (req: any, res) => {
   const returnAmount = Math.max(0, originalMargin + finalPnl);
 
   if (trade.isDemo) {
-    usdWallet.demoBalance = Math.min(5000, Number((usdWallet.demoBalance + returnAmount).toFixed(2)));
+    usdWallet.demoBalance = Number((usdWallet.demoBalance + returnAmount).toFixed(2));
   } else {
     usdWallet.balance += returnAmount;
   }
