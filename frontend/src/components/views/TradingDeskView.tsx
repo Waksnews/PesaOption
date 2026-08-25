@@ -530,31 +530,29 @@ export const TradingDeskView: React.FC = () => {
             />
           </div>
 
-          {/* 2. DIGIT STATISTICS PANEL (Crystal-Clear Active Cursor & Digit Distribution) */}
+          {/* 2. DIGIT STATISTICS PANEL (Clean Monochromatic Layout with Single Active Cursor) */}
           <div className="bg-[#070B16] border border-slate-850 rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between flex-shrink-0 shadow-md">
             
             {/* Panel Header */}
             <div className="flex items-center justify-between pb-1.5 mb-1 border-b border-slate-850 text-[10px] sm:text-[11px] font-mono">
               <div className="flex items-center space-x-1.5">
-                <span className="font-black text-slate-300 tracking-wider uppercase">
+                <span className="font-bold text-slate-300 tracking-wider uppercase">
                   {activeContractType === 'even_odd' ? 'EVEN / ODD' : activeContractType === 'over_under' ? 'OVER / UNDER' : 'DIGIT STATS'}
                 </span>
                 <span className="text-slate-600">|</span>
                 <span className="text-slate-400 text-[9px]">Last 50 Ticks</span>
               </div>
               
-              <div className="flex items-center space-x-2 sm:space-x-3 text-[10px] font-bold">
-                <span className="flex items-center space-x-1 text-emerald-400">
-                  <Flame className="w-3 h-3 text-emerald-400 fill-emerald-400/20" />
-                  <span>HOT {hotDigit.digit}</span>
+              <div className="flex items-center space-x-2 sm:space-x-3 text-[10px]">
+                <span className="text-slate-400">
+                  HOT <strong className="text-slate-200">{hotDigit.digit}</strong>
                 </span>
-                <span className="flex items-center space-x-1 text-rose-400">
-                  <Snowflake className="w-3 h-3 text-rose-400" />
-                  <span>COLD {coldDigit.digit}</span>
+                <span className="text-slate-400">
+                  COLD <strong className="text-slate-200">{coldDigit.digit}</strong>
                 </span>
                 <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-400/50 text-cyan-300 shadow-sm">
                   <span className="text-[9px] uppercase tracking-wider text-cyan-400 font-bold">TICK</span>
-                  <span className="px-1.5 py-0.2 bg-cyan-400 text-slate-950 font-black rounded-full text-[10px] animate-pulse">
+                  <span className="px-1.5 py-0.2 bg-cyan-400 text-slate-950 font-black rounded-full text-[10px]">
                     {lastDigit}
                   </span>
                 </div>
@@ -566,13 +564,11 @@ export const TradingDeskView: React.FC = () => {
               {digitStats.map((item) => {
                 const isLast = item.digit === lastDigit;
                 return (
-                  <div key={`cnt-${item.digit}`} className="flex flex-col items-center justify-end h-6">
+                  <div key={`cnt-${item.digit}`} className="flex flex-col items-center justify-end h-5">
                     {isLast ? (
-                      <div className="flex flex-col items-center">
-                        <span className="text-cyan-400 text-xs font-black leading-none animate-bounce">▼</span>
-                      </div>
+                      <span className="text-cyan-400 text-xs font-black leading-none animate-pulse">▼</span>
                     ) : (
-                      <span className={`font-semibold ${item.digit === hotDigit.digit ? 'text-emerald-400 font-bold' : item.digit === coldDigit.digit ? 'text-rose-400' : 'text-slate-400'}`}>
+                      <span className="text-slate-400 font-medium">
                         {item.count}
                       </span>
                     )}
@@ -584,10 +580,7 @@ export const TradingDeskView: React.FC = () => {
             {/* Vertical Histogram Bars (10 Digits: 0 to 9) */}
             <div className="grid grid-cols-10 gap-1 h-12 sm:h-14 items-end mb-1 px-0.5">
               {digitStats.map((item) => {
-                const isHot = item.digit === hotDigit.digit;
-                const isCold = item.digit === coldDigit.digit;
                 const isLast = item.digit === lastDigit;
-                const isTarget = item.digit === predictionDigit && (activeContractType === 'matches_differ' || activeContractType === 'over_under');
                 const heightPercent = Math.max(16, Math.min(100, item.percentage * 4));
 
                 return (
@@ -601,31 +594,12 @@ export const TradingDeskView: React.FC = () => {
                   >
                     <div 
                       style={{ height: `${heightPercent}%` }}
-                      className={`w-full rounded-md transition-all duration-200 flex flex-col items-center justify-between py-0.5 relative ${
+                      className={`w-full rounded-md transition-all duration-200 flex flex-col items-center justify-center py-0.5 relative ${
                         isLast
-                          ? 'bg-gradient-to-t from-cyan-600 via-cyan-500 to-cyan-300 text-slate-950 font-black border-2 border-cyan-200 shadow-[0_0_20px_rgba(6,182,212,0.9)] z-10 scale-[1.04]'
-                          : isTarget
-                          ? 'bg-slate-800 border-2 border-amber-400 ring-2 ring-amber-400/30 text-amber-300'
-                          : isHot
-                          ? 'bg-slate-800/90 border-t-2 border-t-emerald-400 border-slate-700/60 text-slate-300'
-                          : isCold
-                          ? 'bg-slate-800/90 border-t-2 border-t-rose-400/80 border-slate-700/60 text-slate-400'
+                          ? 'bg-cyan-500 text-slate-950 font-black border-2 border-cyan-200 shadow-[0_0_16px_rgba(6,182,212,0.85)] z-10 scale-[1.03]'
                           : 'bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/50 text-slate-400'
                       }`}
                     >
-                      {/* Top Indicator badge */}
-                      <div className="text-[7px] leading-none">
-                        {isLast ? (
-                          <span className="font-black text-slate-950">●</span>
-                        ) : isHot ? (
-                          <span className="text-emerald-400 font-bold">🔥</span>
-                        ) : isCold ? (
-                          <span className="text-rose-400 font-bold">❄️</span>
-                        ) : isTarget ? (
-                          <span className="text-amber-400 font-bold">🎯</span>
-                        ) : null}
-                      </div>
-
                       {/* Percentage inside bar */}
                       <span className={`text-[8px] font-mono font-bold leading-none ${isLast ? 'text-slate-950 font-black' : 'text-slate-400'}`}>
                         {item.percentage}%
@@ -640,15 +614,12 @@ export const TradingDeskView: React.FC = () => {
             <div className="grid grid-cols-10 gap-1 text-center font-mono text-[10px] sm:text-xs font-bold mb-1.5">
               {digitStats.map((item) => {
                 const isLast = item.digit === lastDigit;
-                const isTarget = item.digit === predictionDigit && (activeContractType === 'matches_differ' || activeContractType === 'over_under');
                 return (
                   <span 
                     key={`lbl-${item.digit}`}
                     className={`py-0.5 rounded cursor-pointer transition-all ${
                       isLast 
-                        ? 'bg-cyan-400 text-slate-950 font-black scale-110 shadow-md shadow-cyan-400/60' 
-                        : isTarget
-                        ? 'border border-amber-400 text-amber-300 font-bold'
+                        ? 'bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-400/50' 
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                     onClick={() => {
@@ -662,20 +633,20 @@ export const TradingDeskView: React.FC = () => {
               })}
             </div>
 
-            {/* Bottom Dual Distribution Progress Bar (EVEN 52% [====|====] ODD 48%) */}
+            {/* Bottom Dual Distribution Progress Bar */}
             <div className="space-y-1">
-              <div className="flex justify-between text-[10px] font-mono font-bold">
-                <span className="text-teal-400">EVEN {evenPercentage}%</span>
-                <span className="text-cyan-400">ODD {oddPercentage}%</span>
+              <div className="flex justify-between text-[10px] font-mono font-semibold">
+                <span className="text-slate-300">EVEN <strong className="text-cyan-400">{evenPercentage}%</strong></span>
+                <span className="text-slate-300">ODD <strong className="text-slate-400">{oddPercentage}%</strong></span>
               </div>
-              <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden flex">
+              <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden flex">
                 <div 
                   style={{ width: `${evenPercentage}%` }} 
-                  className="h-full bg-teal-500 transition-all duration-300"
+                  className="h-full bg-cyan-500/70 transition-all duration-300"
                 />
                 <div 
                   style={{ width: `${oddPercentage}%` }} 
-                  className="h-full bg-cyan-500 transition-all duration-300"
+                  className="h-full bg-slate-700 transition-all duration-300"
                 />
               </div>
             </div>
