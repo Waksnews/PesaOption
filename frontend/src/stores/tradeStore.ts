@@ -151,12 +151,13 @@ export const useTradeStore = create<TradeState>((set, get) => ({
     const { balance, demoBalance } = useWalletStore.getState().getUsdBalance();
     const available = isDemo ? demoBalance : balance;
     if (qty > available) {
-      set({ tradeMsg: { text: 'Insufficient wallet balance.', type: 'error' } });
+      set({ tradeMsg: { text: 'Insufficient wallet balance. Please make a deposit.', type: 'error' } });
       useNotificationStore.getState().addToast(
-        'Order Rejected',
-        'Your current balance is insufficient to support this stake size.',
+        'Insufficient Balance',
+        'Your current balance is insufficient to place this trade. Opening Deposit...',
         'error'
       );
+      useWalletStore.getState().setDepositModalOpen(true);
       return false;
     }
 
@@ -203,8 +204,12 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
       return true;
     } catch (err: any) {
-      set({ tradeMsg: { text: err.message || 'Ledger rejected order fill.', type: 'error' } });
-      useNotificationStore.getState().addToast('Order Failed', err.message || 'Could not place trade.', 'error');
+      const errMsg = err.message || 'Could not place trade.';
+      set({ tradeMsg: { text: errMsg, type: 'error' } });
+      useNotificationStore.getState().addToast('Order Failed', errMsg, 'error');
+      if (typeof errMsg === 'string' && (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('balance'))) {
+        useWalletStore.getState().setDepositModalOpen(true);
+      }
       return false;
     }
   },

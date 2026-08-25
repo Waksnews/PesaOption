@@ -586,6 +586,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     } catch (e: any) {
       setError(e.message);
+      if (e.message && (e.message.toLowerCase().includes('insufficient') || e.message.toLowerCase().includes('balance'))) {
+        useWalletStore.getState().setDepositModalOpen(true);
+      }
       return false;
     }
   };

@@ -231,7 +231,8 @@ export const TradingDeskView: React.FC = () => {
     }
 
     if (stakeUsd > activeUsdBalance) {
-      addToast('Insufficient Balance', 'Stake amount exceeds your available wallet balance.', 'error');
+      addToast('Insufficient Balance', 'Stake amount exceeds your available wallet balance. Opening Deposit...', 'error');
+      setDepositModalOpen(true);
       return;
     }
 
@@ -247,6 +248,13 @@ export const TradingDeskView: React.FC = () => {
   // Start or resume Bot
   const handleStartBot = () => {
     playSound('click');
+
+    if (stakeUsd > activeUsdBalance) {
+      addToast('Insufficient Balance', 'Stake amount exceeds your available balance. Please make a deposit to launch the bot.', 'error');
+      setDepositModalOpen(true);
+      return;
+    }
+
     setExecutionMode('auto');
     setTradingBotActive(true);
     if (botSessionStats.status === 'target_reached' || botSessionStats.status === 'stop_loss_reached') {
@@ -390,11 +398,25 @@ export const TradingDeskView: React.FC = () => {
       // When countdown reaches 0 and ready, fire order
       setBotSessionStats(prev => {
         if (prev.countdown <= 1 && !isExecutingTradeRef.current && openPositionsRef.current.length === 0) {
+          const { balance: realBal, demoBalance: demoBal } = useWalletStore.getState().getUsdBalance();
+          const currentAvail = useWalletStore.getState().isDemo ? demoBal : realBal;
+          const stake = stakeUsdRef.current;
+
+          if (stake > currentAvail) {
+            setTradingBotActive(false);
+            addToast('Bot Paused', 'Insufficient balance to continue trading. Opening Deposit...', 'error');
+            setDepositModalOpen(true);
+            return {
+              ...prev,
+              status: 'paused',
+              lastAction: 'Bot halted: Insufficient wallet balance. Please make a deposit.'
+            };
+          }
+
           isExecutingTradeRef.current = true;
 
           const contractType = activeContractTypeRef.current;
           const symbol = currentMarketRef.current.symbol;
-          const stake = stakeUsdRef.current;
           const duration = optionDurationRef.current;
           const predDigit = predictionDigitRef.current;
 
