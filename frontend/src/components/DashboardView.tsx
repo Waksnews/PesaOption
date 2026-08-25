@@ -40,7 +40,7 @@ import { RealAccountConfirmModal } from './modals/RealAccountConfirmModal';
 import { 
   TrendingUp, Wallet as WalletIcon, Gift, MessageSquare, Settings as SettingsIcon, ShieldCheck, 
   Menu, X, Bell, User as UserIcon, LogOut, ArrowUpRight, ArrowDownLeft, Shield, Check,
-  RefreshCw, Sparkles, HelpCircle
+  RefreshCw, Sparkles, HelpCircle, Volume2, VolumeX, ChevronDown
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -57,6 +57,19 @@ export const DashboardView: React.FC = () => {
   const [bellOpen, setBellOpen] = useState(false);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  // Close menus/dropdowns on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAccountDropdownOpen(false);
+        setDrawerOpen(false);
+        setBellOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Activate SSE connection for live prices and settlement logic
   useSSE();
@@ -111,118 +124,50 @@ export const DashboardView: React.FC = () => {
       {/* Main Container Frame */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         
-        {/* Top Header Navbar */}
-        <header className="h-16 bg-[#090D1A] border-b border-slate-850 px-3 sm:px-6 flex items-center justify-between relative z-[100]">
+        {/* Top Header Navbar (Clean, High-Contrast PesaOption Trading Terminal Header) */}
+        <header className="h-12 sm:h-13 bg-[#0a0d14] border-b border-slate-850 px-2 sm:px-3.5 flex items-center justify-between relative z-[100] flex-shrink-0">
           
-          {/* Top Left Menu Trigger */}
-          <div className="flex items-center space-x-3 sm:space-x-4">
+          {/* Top Left: Menu Trigger & PesaOption Brand */}
+          <div className="flex items-center space-x-2 sm:space-x-2.5 shrink-0">
             <button 
               id="top-nav-menu-btn"
               onClick={() => setDrawerOpen(true)}
-              className="p-2 sm:p-2.5 bg-slate-800/90 hover:bg-slate-700/90 active:scale-95 border border-slate-700/70 rounded-xl text-teal-400 hover:text-teal-300 shadow-md shadow-black/40 transition flex items-center justify-center cursor-pointer shrink-0 z-10"
+              className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-850 active:scale-95 rounded-lg transition flex items-center justify-center cursor-pointer"
               title="Open Navigation Menu"
               aria-label="Open Navigation Menu"
             >
-              <Menu className="w-5 h-5 text-teal-400" />
+              <Menu className="w-5 h-5 text-slate-300" />
             </button>
+
             <div 
               onClick={() => navigate('/')}
-              className="flex items-center space-x-2.5 cursor-pointer select-none"
+              className="flex items-center cursor-pointer select-none"
             >
-              <div className="w-8 h-8 bg-gradient-to-tr from-[#2563EB] to-[#10B981] rounded-xl flex items-center justify-center shadow-lg shadow-[#2563EB]/10 shrink-0">
-                <TrendingUp className="w-4.5 h-4.5 text-slate-950 font-black" />
-              </div>
-              <span className="font-sans font-black text-xs uppercase tracking-widest text-slate-100 hidden sm:inline-block">PesaOption</span>
+              <span className="font-sans font-black text-sm sm:text-base tracking-tight text-white">
+                PesaOption
+              </span>
             </div>
           </div>
 
-          {/* Quick Access Top Bar Buttons (Desktop Only) */}
-          <div className="hidden lg:flex items-center space-x-3.5">
-            <button 
-              onClick={() => setDepositModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0D1527] border border-slate-850 hover:bg-[#131E38] text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer select-none"
-            >
-              <div className="w-5 h-5 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center">
-                <ArrowDownLeft className="w-3 h-3 text-emerald-400" />
-              </div>
-              <span>Deposit</span>
-            </button>
-
-            <button 
-              onClick={() => setWithdrawModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0D1527] border border-slate-850 hover:bg-[#131E38] text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer select-none"
-            >
-              <div className="w-5 h-5 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center">
-                <ArrowUpRight className="w-3 h-3 text-amber-400" />
-              </div>
-              <span>Withdraw</span>
-            </button>
-
-            <button 
-              onClick={() => navigate('/history')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0D1527] border border-slate-850 hover:bg-[#131E38] text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer select-none"
-            >
-              <div className="w-5 h-5 bg-purple-500/10 border border-purple-500/20 rounded-full flex items-center justify-center">
-                <RefreshCw className="w-3 h-3 text-purple-400" />
-              </div>
-              <span>History</span>
-            </button>
-
-            <button 
-              onClick={() => setChatOpen(!chatOpen)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0D1527] border border-slate-850 hover:bg-[#131E38] text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer select-none"
-            >
-              <div className="w-5 h-5 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center">
-                <MessageSquare className="w-3 h-3 text-cyan-400" />
-              </div>
-              <span>Chat Desk</span>
-            </button>
-
-            <button 
-              onClick={() => navigate('/scanner')}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#0D1527] border border-slate-850 hover:bg-[#131E38] text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer select-none"
-            >
-              <div className="w-5 h-5 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center">
-                <Sparkles className="w-3 h-3 text-blue-400" />
-              </div>
-              <span>AI Scan</span>
-            </button>
-          </div>
-
-          {/* Right Accessories (Currency Switcher, Wallet Selector, Notifications) */}
-          <div className="flex items-center space-x-3.5">
+          {/* Top Right: Account Switcher Pill, Sound Icon, Deposit Button */}
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
             
-            {/* Currency Switcher (KES / USD) */}
-            <button
-              onClick={() => {
-                const nextCurr = currency === 'USD' ? 'KES' : 'USD';
-                setCurrency(nextCurr);
-                addToast('Currency Base Updated', `Visual pricing updated to ${nextCurr}.`, 'info');
-              }}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-[#0D1527] hover:bg-[#131E38] border border-slate-850 rounded-xl text-[10px] font-bold font-mono text-slate-300 transition cursor-pointer select-none"
-              title="Toggle active currency representation (KES/USD)"
-            >
-              <span className={currency === 'KES' ? 'text-teal-400' : 'text-slate-550'}>KES</span>
-              <span className="text-slate-755">/</span>
-              <span className={currency === 'USD' ? 'text-teal-400' : 'text-slate-550'}>USD</span>
-            </button>
-
-            {/* Wallet Dropdown Switcher */}
-            <div className="relative">
+            {/* Account Mode & Balance Dropdown Pill - Exact match to reference */}
+            <div className="relative shrink-0">
               <button 
                 onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
-                className={`flex items-center space-x-2 border px-3.5 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer select-none ${
-                  isDemo 
-                    ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/50' 
-                    : 'bg-amber-950/30 border-amber-500/40 text-amber-300 hover:bg-amber-950/50'
-                }`}
+                className="flex items-center space-x-2 px-2 sm:px-2.5 py-1 bg-[#181d28] hover:bg-[#202736] border border-slate-800 hover:border-slate-700 rounded-full transition cursor-pointer select-none shadow-sm"
+                title="Click to switch between Real and Demo accounts"
               >
-                <div className={`w-2 h-2 rounded-full ${isDemo ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
-                <span className="font-black">
-                  {isDemo ? '🟢 DEMO ' : '🟠 REAL '}
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-slate-950 shrink-0 ${
+                  isDemo ? 'bg-[#00c594] shadow-sm shadow-[#00c594]/40' : 'bg-[#ff5b29] shadow-sm shadow-[#ff5b29]/40'
+                }`}>
+                  {isDemo ? 'D' : 'R'}
+                </span>
+                <span className="font-mono font-bold text-xs text-white whitespace-nowrap">
                   {formatCurrency(activeUsdBalance, currency)}
                 </span>
-                <span className="text-slate-500 text-[8px]">▼</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </button>
 
               {accountDropdownOpen && (
@@ -231,33 +176,39 @@ export const DashboardView: React.FC = () => {
                     className="fixed inset-0 z-[110]" 
                     onClick={() => setAccountDropdownOpen(false)} 
                   />
-                  <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#090D1A] border border-slate-800 rounded-2xl p-4 shadow-2xl shadow-black/90 z-[120] space-y-3">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-850">
-                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider font-bold">Switch Account Mode</span>
-                      <button onClick={() => setAccountDropdownOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-200 font-bold uppercase">
-                        Close
+                  <div className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 max-w-[calc(100vw-1.5rem)] bg-[#090D1A] border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-2xl shadow-black/90 z-[120] space-y-2.5 animate-fade-in">
+                    <div className="flex justify-between items-center pb-2.5 border-b border-slate-800">
+                      <span className="text-[11px] font-mono text-slate-300 uppercase tracking-wider font-bold">Select Account Mode</span>
+                      <button 
+                        onClick={() => setAccountDropdownOpen(false)} 
+                        className="flex items-center space-x-1 px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-md text-[10px] font-bold uppercase transition cursor-pointer"
+                        title="Close Dropdown (Esc)"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Close</span>
                       </button>
                     </div>
 
                     {/* Demo Account Box */}
                     <div 
                       onClick={() => { setIsDemo(true); setAccountDropdownOpen(false); }}
-                      className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
+                      className={`p-2.5 rounded-xl border transition cursor-pointer flex justify-between items-center ${
                         isDemo 
-                          ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300' 
+                          ? 'bg-teal-500/15 border-teal-500/50 text-teal-300' 
                           : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
                       }`}
                     >
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-wide flex items-center space-x-1">
-                          <span>🟢 DEMO ACCOUNT</span>
+                          <span className="w-2 h-2 rounded-full bg-[#00c594] inline-block" />
+                          <span>DEMO ACCOUNT</span>
                         </p>
-                        <p className="text-sm font-mono font-bold text-slate-100 mt-1">
+                        <p className="text-xs sm:text-sm font-mono font-bold text-slate-100 mt-0.5">
                           {formatCurrency(demoBalance, currency)}
                         </p>
                       </div>
                       <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold ${
-                        isDemo ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-slate-800 text-slate-500'
+                        isDemo ? 'bg-[#00c594]/20 text-[#00c594] border border-[#00c594]/40' : 'bg-slate-800 text-slate-500'
                       }`}>
                         {isDemo ? 'Active' : 'Select'}
                       </span>
@@ -271,22 +222,23 @@ export const DashboardView: React.FC = () => {
                           setConfirmModalOpen(true);
                         }
                       }}
-                      className={`p-3 rounded-xl border transition cursor-pointer flex justify-between items-center ${
+                      className={`p-2.5 rounded-xl border transition cursor-pointer flex justify-between items-center ${
                         !isDemo 
-                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-300' 
+                          ? 'bg-[#ff5b29]/15 border-[#ff5b29]/50 text-[#ff7a50]' 
                           : 'bg-slate-950/60 border-slate-900 text-slate-400 hover:bg-slate-900/60'
                       }`}
                     >
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-wide flex items-center space-x-1">
-                          <span>🟠 REAL ACCOUNT</span>
+                          <span className="w-2 h-2 rounded-full bg-[#ff5b29] inline-block" />
+                          <span>REAL ACCOUNT</span>
                         </p>
-                        <p className="text-sm font-mono font-bold text-slate-100 mt-1">
+                        <p className="text-xs sm:text-sm font-mono font-bold text-slate-100 mt-0.5">
                           {formatCurrency(balance, currency)}
                         </p>
                       </div>
                       <span className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded font-bold ${
-                        !isDemo ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-500'
+                        !isDemo ? 'bg-[#ff5b29]/20 text-[#ff7a50] border border-[#ff5b29]/40' : 'bg-slate-800 text-slate-500'
                       }`}>
                         {!isDemo ? 'Active' : 'Select'}
                       </span>
@@ -306,9 +258,9 @@ export const DashboardView: React.FC = () => {
                           }
                           setAccountDropdownOpen(false);
                         }}
-                        className="text-[10px] text-orange-400 hover:text-orange-300 font-mono flex items-center space-x-1 cursor-pointer"
+                        className="text-[10px] text-teal-400 hover:text-teal-300 font-mono flex items-center space-x-1 cursor-pointer"
                       >
-                        <RefreshCw className="w-3 h-3 text-orange-400" />
+                        <RefreshCw className="w-3 h-3 text-teal-400" />
                         <span>Top-Up Demo</span>
                       </button>
                     </div>
@@ -317,46 +269,29 @@ export const DashboardView: React.FC = () => {
               )}
             </div>
 
-            {/* Notifications Dropdown */}
-            <div className="relative">
-              <button 
-                onClick={() => { setBellOpen(!bellOpen); markNotificationsRead(); }}
-                className="relative p-2 text-slate-450 hover:text-slate-200 hover:bg-slate-850 rounded-xl transition cursor-pointer"
-              >
-                <Bell className="w-4.5 h-4.5" />
-                {notifications.some(n => !n.read) && (
-                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-teal-400 rounded-full animate-ping" />
-                )}
-              </button>
-
-              {bellOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-[110]" 
-                    onClick={() => setBellOpen(false)} 
-                  />
-                  <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-[#090D1A] border border-slate-800 rounded-2xl p-4 shadow-2xl shadow-black/90 z-[120] space-y-3">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2">
-                      <span className="font-display font-semibold text-xs text-slate-350 uppercase tracking-wider">Alerts Feed</span>
-                      <button onClick={() => setBellOpen(false)} className="text-[10px] text-slate-550 hover:text-slate-350 uppercase">Close</button>
-                    </div>
-                    <div className="space-y-3.5 max-h-60 overflow-y-auto pr-1 scrollbar-thin">
-                      {notifications.length === 0 ? (
-                        <p className="text-[10px] text-slate-500 text-center py-4">No active system notifications.</p>
-                      ) : (
-                        notifications.slice(0, 8).map(n => (
-                          <div key={n.id} className="text-xs space-y-1">
-                            <p className={`font-semibold ${n.read ? 'text-slate-400' : 'text-teal-400'}`}>{n.title}</p>
-                            <p className="text-[11px] text-slate-450 leading-relaxed">{n.message}</p>
-                            <p className="text-[9px] text-slate-600 font-mono">{new Date(n.createdAt).toLocaleDateString()}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </>
+            {/* Sound Toggle (Clean Speaker Icon as in reference) */}
+            <button
+              onClick={() => {
+                useSettingsStore.getState().toggleSound();
+                addToast('Audio Settings', `Audio effects ${useSettingsStore.getState().soundEnabled ? 'enabled' : 'muted'}.`, 'info');
+              }}
+              className="p-1.5 text-slate-400 hover:text-white transition cursor-pointer"
+              title={useSettingsStore.getState().soundEnabled ? 'Mute Trading Audio' : 'Enable Trading Audio'}
+            >
+              {useSettingsStore.getState().soundEnabled ? (
+                <Volume2 className="w-4.5 h-4.5 text-slate-300 hover:text-white" />
+              ) : (
+                <VolumeX className="w-4.5 h-4.5 text-slate-600" />
               )}
-            </div>
+            </button>
+
+            {/* Header Deposit Button (Solid Vibrant Rounded Button as in reference) */}
+            <button
+              onClick={() => setDepositModalOpen(true)}
+              className="px-3 sm:px-4 py-1.5 bg-[#ff5b29] hover:bg-[#ff6e40] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-[#ff5b29]/25 transition active:scale-95 cursor-pointer flex items-center justify-center shrink-0"
+            >
+              <span>Deposit</span>
+            </button>
 
           </div>
         </header>

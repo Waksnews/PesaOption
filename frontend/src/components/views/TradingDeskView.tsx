@@ -3,21 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMarketStore } from '../../stores/marketStore';
 import { useTradeStore } from '../../stores/tradeStore';
 import { useWalletStore } from '../../stores/walletStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useChatStore } from '../../stores/chatStore';
 import { useMarketSimulation } from '../../hooks/useMarketSimulation';
-import { formatCurrency, getUsdKesRate } from '../../lib/currency';
+import { getUsdKesRate, formatCurrency } from '../../lib/currency';
+import { playSound } from '../../lib/sound';
 import { TradingChart } from '../TradingChart';
 import { RealAccountConfirmModal } from '../modals/RealAccountConfirmModal';
 import { 
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Sparkles, 
-  RefreshCw, Circle, ChevronDown, ChevronUp, Check, Search, 
-  Clock, DollarSign, Activity, Layers, Sliders, X, ShieldAlert,
-  Wallet, AlertTriangle
+  Circle, ChevronDown, Check, Search, Clock, DollarSign, Activity, 
+  Layers, X, Wallet, ShieldAlert, Sliders, Play, Square, AlertCircle,
+  BarChart2, Zap, ArrowRightLeft, Shield, MessageSquare, RefreshCw, Flame, Snowflake
 } from 'lucide-react';
 
 const getPayoutRate = (category: string): number => {
@@ -32,36 +35,46 @@ const getPayoutRate = (category: string): number => {
 };
 
 export const TradingDeskView: React.FC = () => {
-  // Initialize continuous market simulation for live streaming
+  const navigate = useNavigate();
+  // Initialize continuous high-frequency market simulation
   useMarketSimulation();
 
   const { prices, selectedSymbol, setSelectedSymbol, getMarketBySymbol } = useMarketStore();
   const { 
     openPositions, closedTrades, placeOrder, closePositionEarly,
-    tradeQty, setTradeQty, contractMode, setContractMode, 
-    activeContractType, setActiveContractType, selectedPrediction, setSelectedPrediction, 
+    activeContractType, setActiveContractType, 
+    selectedPrediction, setSelectedPrediction, 
     optionDuration, setOptionDuration, predictionDigit, setPredictionDigit,
-    tradeMsg, getDigitStats, tradingBotActive, setTradingBotActive, setBotLogs
+    getDigitStats, digitHistory, tradingBotActive, setTradingBotActive, setBotLogs
   } = useTradeStore();
 
-  const { isDemo, setIsDemo, getUsdBalance } = useWalletStore();
+  const { isDemo, setIsDemo, getUsdBalance, setDepositModalOpen } = useWalletStore();
   const { addToast } = useNotificationStore();
-  const { currency: globalCurrency } = useSettingsStore();
+  const { setChatOpen } = useChatStore();
 
-  // Local state for trading display currency (KES vs USD) inside the trading desk
-  const [tradeCurrency, setTradeCurrency] = useState<'KES' | 'USD'>('KES');
+  // Mode: Auto vs Manual (matching reference)
+  const [executionMode, setExecutionMode] = useState<'auto' | 'manual'>('auto');
+
+  // Local trading currency display state (KES vs USD)
+  const [tradeCurrency, setTradeCurrency] = useState<'KES' | 'USD'>('USD');
+  const [stakeValue, setStakeValue] = useState<number>(10);
   
-  // Local input state for stake in selected tradeCurrency
-  const [inputStake, setInputStake] = useState<string>('1000');
+  // Advanced controls: target profit, stop loss, multiplier
+  const [targetProfit, setTargetProfit] = useState<number>(200);
+  const [stopLoss, setStopLoss] = useState<number>(999);
+  const [multiplier, setMultiplier] = useState<number>(2);
 
+  // Modals & Bottom Sheets
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState('');
-  const [leftTab, setLeftTab] = useState<'open' | 'closed' | 'ledger'>('open');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | 'crypto' | 'forex' | 'vol_index' | 'indices' | 'commodities'>('all');
   
-  // Mobile tab state for secondary sections
-  const [mobileTab, setMobileTab] = useState<'orders' | 'positions' | 'stats'>('orders');
+  const [positionsSheetOpen, setPositionsSheetOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [durationModalOpen, setDurationModalOpen] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+
+  const [centerTab, setCenterTab] = useState<'active' | 'history' | 'audit'>('active');
 
   const rate = getUsdKesRate() || 130;
 
@@ -70,15 +83,9 @@ export const TradingDeskView: React.FC = () => {
   const activeUsdBalance = isDemo ? demoUsd : realUsd;
   const activeDisplayBalance = tradeCurrency === 'KES' ? activeUsdBalance * rate : activeUsdBalance;
 
-  // Formatted balance strings
-  const realDisplayVal = tradeCurrency === 'KES' ? realUsd * rate : realUsd;
-  const realBalanceDisplay = tradeCurrency === 'KES'
-    ? `KSh ${realDisplayVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : `$${realUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  // Market details
+  // Current selected market
   const currentMarket = getMarketBySymbol(selectedSymbol) || prices[0] || {
-    symbol: 'VOL_100_1S', name: 'Vol 100 (1s)', price: 12451.27, change24h: -5.62, category: 'vol_index', sparkline: []
+    symbol: 'VOL_10_1S', name: 'Volatility 10 (1s) Index', price: 9450.34, change24h: -0.01, category: 'vol_index', sparkline: []
   };
 
   const formattedPrice = currentMarket.price.toLocaleString(undefined, {
@@ -86,741 +93,1132 @@ export const TradingDeskView: React.FC = () => {
     maximumFractionDigits: currentMarket.category === 'forex' ? 4 : 2,
   });
 
-  // Last digit calculation
+  // Calculate last digit
   const priceStr = currentMarket.price.toFixed(currentMarket.category === 'forex' ? 4 : 2);
   const lastDigit = parseInt(priceStr[priceStr.length - 1], 10) || 0;
-  const isLastDigitEven = lastDigit % 2 === 0;
 
   const yieldRate = getPayoutRate(currentMarket.category);
   const digitStats = getDigitStats();
 
-  // Sync stake input when toggling tradeCurrency
-  const handleCurrencyToggle = (newCurrency: 'KES' | 'USD') => {
-    if (newCurrency === tradeCurrency) return;
-    const currentVal = parseFloat(inputStake) || 0;
-    if (newCurrency === 'KES') {
-      setInputStake(Math.round(currentVal * rate).toString());
-    } else {
-      setInputStake((currentVal / rate).toFixed(2));
+  // Find Hot and Cold digits
+  const { hotDigit, coldDigit } = useMemo(() => {
+    if (!digitStats || digitStats.length === 0) {
+      return { hotDigit: { digit: 4, count: 13, percentage: 18 }, coldDigit: { digit: 9, count: 6, percentage: 8 } };
     }
-    setTradeCurrency(newCurrency);
+    const sorted = [...digitStats].sort((a, b) => b.count - a.count);
+    return {
+      hotDigit: sorted[0] || { digit: 4, count: 13, percentage: 18 },
+      coldDigit: sorted[sorted.length - 1] || { digit: 9, count: 6, percentage: 8 }
+    };
+  }, [digitStats]);
+
+  // Even / Odd percentages
+  const evenPercentage = useMemo(() => {
+    return digitStats.filter(s => s.digit % 2 === 0).reduce((acc, s) => acc + s.percentage, 0);
+  }, [digitStats]);
+
+  const oddPercentage = useMemo(() => {
+    return digitStats.filter(s => s.digit % 2 !== 0).reduce((acc, s) => acc + s.percentage, 0);
+  }, [digitStats]);
+
+  // Stake quick presets
+  const quickPresets = tradeCurrency === 'USD' 
+    ? [1, 5, 10, 25, 50, 100] 
+    : [100, 500, 1000, 2500, 5000, 10000];
+
+  // Adjust stake with stepper
+  const handleStakeStep = (delta: number) => {
+    playSound('click');
+    const step = tradeCurrency === 'USD' ? 1 : 100;
+    const nextVal = Math.max(step, stakeValue + delta * step);
+    setStakeValue(nextVal);
   };
 
-  // Convert input stake to USD for API call
-  const calculateStakeUsd = (): number => {
-    const val = parseFloat(inputStake) || 0;
-    return tradeCurrency === 'KES' ? val / rate : val;
+  // Convert current stake to USD
+  const getStakeInUsd = (): number => {
+    return tradeCurrency === 'KES' ? stakeValue / rate : stakeValue;
   };
 
-  const handleOpenTrade = async (prediction: string, type: 'buy' | 'sell') => {
+  // Payout calculation
+  const stakeUsd = getStakeInUsd();
+  const estimatedPayoutUsd = stakeUsd * (1 + yieldRate);
+  const estimatedPayoutDisplay = tradeCurrency === 'KES' 
+    ? `KSh ${(estimatedPayoutUsd * rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `$${estimatedPayoutUsd.toFixed(2)}`;
+
+  // Matches/Differs multiplier calculation
+  const matchesPayoutUsd = stakeUsd * 9.5;
+  const matchesPayoutDisplay = tradeCurrency === 'KES' 
+    ? `KSh ${(matchesPayoutUsd * rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `$${matchesPayoutUsd.toFixed(2)}`;
+
+  // Execute trade order
+  const handleTrade = async (prediction: string, type: 'buy' | 'sell') => {
+    playSound('trade');
     setSelectedPrediction(prediction);
-    
-    const stakeUsd = calculateStakeUsd();
+    useTradeStore.getState().setTradeQty(stakeUsd.toString());
+
     if (stakeUsd <= 0 || isNaN(stakeUsd)) {
-      addToast('Invalid Stake', 'Please enter a valid stake amount.', 'error');
+      addToast('Invalid Stake', 'Please specify a valid stake amount.', 'error');
       return;
     }
 
     if (stakeUsd > activeUsdBalance) {
-      addToast('Insufficient Balance', 'Stake exceeds your available account balance.', 'error');
+      addToast('Insufficient Balance', 'Stake amount exceeds your available wallet balance.', 'error');
       return;
     }
 
-    // Update tradeQty in store to match converted USD stake
-    setTradeQty(stakeUsd.toFixed(2));
-
-    const success = await placeOrder(selectedSymbol, type);
-    if (success) {
-      const displayStake = tradeCurrency === 'KES' 
-        ? `KES ${(stakeUsd * rate).toLocaleString(undefined, { maximumFractionDigits: 0 })}` 
-        : `$${stakeUsd.toFixed(2)} USD`;
-      
-      addToast('Contract Executed', `Purchased ${prediction.toUpperCase()} contract with stake of ${displayStake}`, 'success');
+    const ok = await placeOrder(currentMarket.symbol, type);
+    if (ok) {
+      // Order placed successfully
     }
   };
 
-  // Quick preset adder
-  const handleAddPreset = (amountToAdd: number) => {
-    const current = parseFloat(inputStake) || 0;
-    setInputStake((current + amountToAdd).toString());
-  };
-
-  // Automated bot execution
+  // Bot loop runner
   useEffect(() => {
-    if (!tradingBotActive) return;
-
-    const addLog = (msg: string) => {
-      const time = new Date().toLocaleTimeString();
-      setBotLogs(prev => [`[${time}] ${msg}`, ...prev.slice(0, 20)]);
+    let interval: any = null;
+    if (tradingBotActive) {
+      interval = setInterval(() => {
+        const randomPred = Math.random() > 0.5 ? 'even' : 'odd';
+        const type = randomPred === 'even' ? 'buy' : 'sell';
+        handleTrade(randomPred, type);
+      }, (optionDuration + 3) * 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
     };
+  }, [tradingBotActive, optionDuration, stakeValue, tradeCurrency, selectedSymbol]);
 
-    addLog(`Trading bot scanning ${selectedSymbol}...`);
+  // Filtered asset list
+  const filteredMarkets = useMemo(() => {
+    return prices.filter(p => {
+      const matchCat = activeCategoryFilter === 'all' || p.category === activeCategoryFilter;
+      const matchSearch = p.name.toLowerCase().includes(assetSearch.toLowerCase()) || 
+                          p.symbol.toLowerCase().includes(assetSearch.toLowerCase());
+      return matchCat && matchSearch;
+    });
+  }, [prices, activeCategoryFilter, assetSearch]);
 
-    const interval = setInterval(() => {
-      const sides = ['rise', 'fall'] as const;
-      const side = sides[Math.floor(Math.random() * sides.length)];
-      addLog(`Algorithm trigger. Placing ${side.toUpperCase()} contract...`);
-      
-      const stakeUsd = calculateStakeUsd();
-      setTradeQty(stakeUsd > 0 ? stakeUsd.toFixed(2) : '10');
-      placeOrder(selectedSymbol, side === 'rise' ? 'buy' : 'sell');
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, [tradingBotActive, selectedSymbol, placeOrder, inputStake]);
-
-  // Payout calculation preview
-  const currentStakeNum = parseFloat(inputStake) || 0;
-  const potentialProfitNum = currentStakeNum * yieldRate;
-  const potentialPayoutNum = currentStakeNum + potentialProfitNum;
+  // Global ESC key listener to clear/close any open modal or bottom sheet
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAssetSearchOpen(false);
+        setPositionsSheetOpen(false);
+        setSettingsModalOpen(false);
+        setDurationModalOpen(false);
+        setConfirmModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
-    <div className="flex flex-col h-full space-y-2 lg:h-[calc(100vh-4.8rem)] lg:min-h-0 lg:overflow-hidden pb-20 lg:pb-0">
+    <div className="w-full h-full flex flex-col justify-between overflow-hidden select-none">
       
-      {/* Top Header Ticker Bar & Compact Asset Info */}
-      <div className="bg-[#090D1A] border border-slate-800 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-lg relative z-20 flex-shrink-0">
+      {/* 1. TOP MARKET CATEGORY NAVIGATION (Matches/Differs, Even/Odd, Over/Under, Rise/Fall) */}
+      <div className="w-full mb-1 flex items-center justify-between gap-1 overflow-x-auto scrollbar-none pb-0.5 flex-shrink-0">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 w-full">
+          {[
+            { id: 'even_odd', label: 'Even / Odd' },
+            { id: 'matches_differ', label: 'Matches / Differs' },
+            { id: 'over_under', label: 'Over / Under' },
+            { id: 'rise_fall', label: 'Rise / Fall' },
+          ].map(tab => {
+            const isActive = activeContractType === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  setActiveContractType(tab.id as any);
+                }}
+                className={`flex-1 py-1 sm:py-1.5 px-2 rounded-xl text-[11px] sm:text-xs font-bold text-center transition cursor-pointer whitespace-nowrap border ${
+                  isActive
+                    ? 'bg-slate-900 border-teal-500 text-teal-300 shadow-md shadow-teal-500/10'
+                    : 'bg-[#090D1A] border-slate-850 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* MAIN BODY WORKSPACE (Responsive Single-Screen Grid) */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-1.5 sm:gap-2">
         
-        {/* Left: Asset Selector & Live Price */}
-        <div className="flex items-center space-x-2.5">
-          <button 
-            onClick={() => setAssetSearchOpen(!assetSearchOpen)}
-            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-100 text-xs font-bold rounded-lg flex items-center space-x-1.5 transition cursor-pointer"
-          >
-            <span className="font-mono">{currentMarket.name}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </button>
-
-          <div className="flex items-baseline space-x-2">
-            <span className="text-sm sm:text-base font-mono font-black text-slate-100 tracking-tight">
-              {formattedPrice}
-            </span>
-            <span className={`text-[10px] font-mono font-bold flex items-center ${
-              currentMarket.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}>
-              {currentMarket.change24h >= 0 ? <ArrowUpRight className="w-3 h-3 inline" /> : <ArrowDownLeft className="w-3 h-3 inline" />}
-              <span>{currentMarket.change24h >= 0 ? '+' : ''}{currentMarket.change24h.toFixed(2)}%</span>
-            </span>
+        {/* LEFT / CENTER: Chart & Digit Statistics Stack (Desktop 8 Cols, Mobile Full) */}
+        <div className="lg:col-span-8 flex flex-col justify-between h-full min-h-0 space-y-1.5">
+          
+          {/* CONTINUOUS LIVE CHART CARD (With Integrated Floating Instrument Dropdown, 1T Pill, Return %, Price Callout) */}
+          <div className="flex-1 min-h-[160px] sm:min-h-[220px] max-h-[280px] lg:max-h-none">
+            <TradingChart 
+              symbol={currentMarket.symbol}
+              currentPrice={currentMarket.price}
+              change24h={currentMarket.change24h}
+              marketName={currentMarket.name}
+              payoutRate={yieldRate}
+              onOpenAssetSelector={() => setAssetSearchOpen(true)}
+            />
           </div>
+
+          {/* 2. DIGIT STATISTICS PANEL (Exact Replication of Reference Design) */}
+          <div className="bg-[#070B16] border border-slate-850 rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between flex-shrink-0 shadow-md">
+            
+            {/* Panel Header */}
+            <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-850 text-[10px] sm:text-[11px] font-mono">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-black text-slate-300 tracking-wider uppercase">
+                  {activeContractType === 'even_odd' ? 'EVEN / ODD' : activeContractType === 'over_under' ? 'OVER / UNDER' : 'DIGIT STATS'}
+                </span>
+                <span className="text-slate-600">|</span>
+                <span className="text-slate-400 text-[9px]">Last 50 Ticks</span>
+              </div>
+              
+              <div className="flex items-center space-x-2 sm:space-x-3 text-[10px] font-bold">
+                <span className="flex items-center space-x-1 text-teal-400">
+                  <Flame className="w-3 h-3 text-teal-400 fill-teal-400/20" />
+                  <span>HOT {hotDigit.digit}</span>
+                </span>
+                <span className="flex items-center space-x-1 text-rose-400">
+                  <Snowflake className="w-3 h-3 text-rose-400" />
+                  <span>COLD {coldDigit.digit}</span>
+                </span>
+                <span className="flex items-center space-x-1 text-cyan-300">
+                  <Activity className="w-3 h-3 text-cyan-300" />
+                  <span>LAST {lastDigit}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Frequency Counts Row (Numbers directly above the vertical bars) */}
+            <div className="grid grid-cols-10 gap-1 text-center font-mono text-[9px] sm:text-[10px] text-slate-400 mb-0.5">
+              {digitStats.map((item) => (
+                <span 
+                  key={`cnt-${item.digit}`} 
+                  className={`font-semibold ${item.digit === hotDigit.digit ? 'text-teal-400 font-bold' : item.digit === coldDigit.digit ? 'text-rose-400' : 'text-slate-400'}`}
+                >
+                  {item.count}
+                </span>
+              ))}
+            </div>
+
+            {/* Vertical Histogram Bars (10 Digits: 0 to 9) */}
+            <div className="grid grid-cols-10 gap-1 h-12 sm:h-14 items-end mb-1 px-0.5">
+              {digitStats.map((item) => {
+                const isHot = item.digit === hotDigit.digit;
+                const isCold = item.digit === coldDigit.digit;
+                const isLast = item.digit === lastDigit;
+                const heightPercent = Math.max(15, Math.min(100, item.percentage * 4));
+
+                return (
+                  <div 
+                    key={`bar-${item.digit}`} 
+                    className="flex flex-col items-center justify-end h-full group relative cursor-pointer"
+                    onClick={() => {
+                      playSound('click');
+                      setPredictionDigit(item.digit);
+                    }}
+                  >
+                    <div 
+                      style={{ height: `${heightPercent}%` }}
+                      className={`w-full rounded-md transition-all duration-300 flex items-center justify-center relative ${
+                        isHot
+                          ? 'bg-teal-500 text-slate-950 font-black shadow-lg shadow-teal-500/30'
+                          : isLast
+                          ? 'bg-cyan-500/80 text-slate-950 font-black border border-cyan-300'
+                          : isCold
+                          ? 'bg-slate-800 border border-rose-500/40 text-rose-300'
+                          : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {isLast && (
+                        <div className="absolute -top-1 w-1.5 h-1.5 bg-cyan-300 rounded-full animate-ping" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Digit Labels (0 1 2 3 4 5 6 7 8 9) */}
+            <div className="grid grid-cols-10 gap-1 text-center font-mono text-[10px] sm:text-xs font-bold text-slate-300 mb-1.5">
+              {digitStats.map((item) => {
+                const isHot = item.digit === hotDigit.digit;
+                const isLast = item.digit === lastDigit;
+                return (
+                  <span 
+                    key={`lbl-${item.digit}`}
+                    className={`py-0.5 rounded cursor-pointer ${
+                      isHot 
+                        ? 'text-teal-300 font-black' 
+                        : isLast 
+                        ? 'text-cyan-400 font-black' 
+                        : 'text-slate-400'
+                    }`}
+                    onClick={() => {
+                      playSound('click');
+                      setPredictionDigit(item.digit);
+                    }}
+                  >
+                    {item.digit}
+                  </span>
+                );
+              })}
+            </div>
+
+            {/* Bottom Dual Distribution Progress Bar (EVEN 52% [====|====] ODD 48%) */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] font-mono font-bold">
+                <span className="text-teal-400">EVEN {evenPercentage}%</span>
+                <span className="text-cyan-400">ODD {oddPercentage}%</span>
+              </div>
+              <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden flex">
+                <div 
+                  style={{ width: `${evenPercentage}%` }} 
+                  className="h-full bg-teal-500 transition-all duration-300"
+                />
+                <div 
+                  style={{ width: `${oddPercentage}%` }} 
+                  className="h-full bg-cyan-500 transition-all duration-300"
+                />
+              </div>
+            </div>
+
+          </div>
+
+          {/* Desktop Active Positions Preview (Hidden on Mobile) */}
+          <div className="hidden lg:flex bg-[#070B16] border border-slate-850 rounded-2xl p-2.5 flex-1 min-h-[90px] flex-col justify-between">
+            <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 pb-1 border-b border-slate-850">
+              <div className="flex items-center space-x-1.5">
+                <Clock className="w-3.5 h-3.5 text-teal-400" />
+                <span className="font-bold text-slate-200 uppercase">Live Contracts ({openPositions.length})</span>
+              </div>
+              <button 
+                onClick={() => navigate('/history')}
+                className="text-[10px] text-teal-400 hover:text-teal-300 font-bold"
+              >
+                Full History →
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto max-h-[80px] scrollbar-thin py-1">
+              {openPositions.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-slate-500 text-xs font-mono py-2">
+                  No active contracts. Select parameters and execute a trade.
+                </div>
+              ) : (
+                openPositions.map((pos) => (
+                  <div key={pos.id} className="flex justify-between items-center py-1 px-2 bg-slate-900/60 rounded-lg text-xs font-mono mb-1">
+                    <span className="font-bold text-slate-200">{pos.symbol}</span>
+                    <span className="text-teal-400 uppercase font-bold">{pos.prediction || pos.type}</span>
+                    <span className="text-slate-300">${pos.quantity}</span>
+                    <button 
+                      onClick={() => closePositionEarly(pos.id)}
+                      className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[10px] hover:bg-rose-500/30"
+                    >
+                      Cash Out
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
         </div>
 
-        {/* Center/Right: Badges + Balance Summary */}
-        <div className="flex items-center space-x-2.5 text-xs font-mono">
-          <div className="bg-slate-950 border border-slate-850 px-2 py-1 rounded-lg flex items-center space-x-1">
-            <span className="text-slate-500 text-[9px] uppercase font-bold">Last Digit:</span>
-            <span className={`font-black text-xs px-1.5 py-0.2 rounded ${
-              isLastDigitEven ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-            }`}>
-              {lastDigit}
-            </span>
+        {/* RIGHT: Trading Execution Console (Desktop 4 Cols, Mobile Full Width) */}
+        <div className="lg:col-span-4 flex flex-col justify-between space-y-1.5 sm:space-y-2">
+          
+          {/* 3. AUTO / MANUAL SEGMENTED CONTROL */}
+          <div className="w-full bg-slate-950 border border-slate-800 p-0.5 rounded-xl flex items-center shadow-inner">
+            <button
+              type="button"
+              onClick={() => {
+                playSound('click');
+                setExecutionMode('auto');
+                setTradingBotActive(true);
+                addToast('Auto Bot Activated', 'Automated algorithmic trading strategy engaged.', 'info');
+              }}
+              className={`flex-1 py-1.5 sm:py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                executionMode === 'auto'
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-md shadow-teal-500/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>AUTO</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                playSound('click');
+                setExecutionMode('manual');
+                setTradingBotActive(false);
+              }}
+              className={`flex-1 py-1.5 sm:py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                executionMode === 'manual'
+                  ? 'bg-slate-800 text-teal-300 border border-teal-500/40 shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>MANUAL</span>
+            </button>
           </div>
 
-          <div className="bg-slate-950 border border-slate-850 px-2 py-1 rounded-lg flex items-center space-x-1">
-            <span className="text-slate-500 text-[9px] uppercase font-bold">Return:</span>
-            <span className="font-black text-xs text-emerald-400">
-              +{(yieldRate * 100).toFixed(0)}%
-            </span>
+          {/* 4. STAKE CONTROL ([-] STAKE [+], Large Center Value & Quick Amounts) */}
+          <div className="bg-[#070B16] border border-slate-850 rounded-2xl p-2.5 sm:p-3 space-y-2 shadow-md">
+            
+            {/* Top Stepper Row */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => handleStakeStep(-1)}
+                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-850 active:scale-95 border border-slate-800 text-slate-200 hover:text-teal-300 flex items-center justify-center text-lg font-black transition cursor-pointer"
+              >
+                -
+              </button>
+
+              <div className="flex flex-col items-center">
+                <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 font-bold">
+                  STAKE ({tradeCurrency})
+                </span>
+                <div className="flex items-center justify-center space-x-0.5">
+                  <span className="text-sm font-mono font-bold text-slate-400">
+                    {tradeCurrency === 'USD' ? '$' : 'KSh'}
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    step={tradeCurrency === 'USD' ? '1' : '100'}
+                    value={stakeValue || ''}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setStakeValue(isNaN(val) ? 0 : val);
+                    }}
+                    onBlur={() => {
+                      if (!stakeValue || stakeValue < 1) setStakeValue(tradeCurrency === 'USD' ? 1 : 100);
+                    }}
+                    className="w-24 sm:w-28 text-center text-xl sm:text-2xl font-mono font-black text-slate-100 bg-transparent focus:outline-none focus:bg-slate-900/50 rounded-lg py-0.5"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleStakeStep(1)}
+                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-850 active:scale-95 border border-slate-800 text-slate-200 hover:text-teal-300 flex items-center justify-center text-lg font-black transition cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Quick Stake Preset Buttons (6 Pills) */}
+            <div className="grid grid-cols-6 gap-1">
+              {quickPresets.map((preset) => {
+                const isSelected = stakeValue === preset;
+                return (
+                  <button
+                    key={`preset-${preset}`}
+                    type="button"
+                    onClick={() => {
+                      playSound('click');
+                      setStakeValue(preset);
+                    }}
+                    className={`py-1 rounded-lg font-mono text-[10px] sm:text-[11px] font-bold transition cursor-pointer border ${
+                      isSelected
+                        ? 'bg-teal-500/20 border-teal-500 text-teal-300 shadow-sm'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                    }`}
+                  >
+                    {tradeCurrency === 'USD' ? `$${preset}` : preset >= 1000 ? `${preset / 1000}k` : preset}
+                  </button>
+                );
+              })}
+            </div>
+
           </div>
 
-          <div className="hidden sm:flex items-center space-x-1.5 bg-slate-950 border border-slate-850 px-2.5 py-1 rounded-lg text-[11px]">
-            <span className="text-slate-500 font-bold">{isDemo ? 'DEMO' : 'REAL'}:</span>
-            <span className="font-bold text-slate-200">
-              {tradeCurrency === 'KES' ? `KES ${activeDisplayBalance.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${activeDisplayBalance.toFixed(2)}`}
-            </span>
+          {/* 5. ADVANCED TRADE RISK PARAMETERS (3 Equal Editable Cards in 1 Row) */}
+          <div className="grid grid-cols-3 gap-1.5 text-center">
+            
+            {/* Target Profit (Directly Editable) */}
+            <div className="bg-[#070B16] border border-slate-850 hover:border-teal-500/40 p-1.5 sm:p-2 rounded-xl transition flex flex-col justify-between">
+              <div className="flex items-center justify-center space-x-1 text-[9px] font-mono text-slate-400 uppercase font-bold mb-0.5">
+                <span>🎯</span>
+                <span>TARGET ($)</span>
+              </div>
+              <div className="flex items-center justify-center space-x-0.5 my-0.5">
+                <span className="text-xs font-mono font-bold text-teal-400/80">$</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="10"
+                  value={targetProfit || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setTargetProfit(isNaN(val) ? 0 : val);
+                  }}
+                  onBlur={() => {
+                    if (!targetProfit || targetProfit < 1) setTargetProfit(10);
+                  }}
+                  className="w-full text-center text-xs sm:text-sm font-mono font-bold text-teal-400 bg-slate-950/70 border border-slate-800 focus:border-teal-500 rounded py-0.5 focus:outline-none"
+                />
+              </div>
+              <div className="flex items-center justify-center space-x-1 pt-0.5">
+                <button 
+                  type="button" 
+                  onClick={() => { playSound('click'); setTargetProfit(Math.max(10, targetProfit - 25)); }}
+                  className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded text-[9px] font-mono"
+                  title="Decrease Target Profit by $25"
+                >
+                  -25
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => { playSound('click'); setTargetProfit(targetProfit + 25); }}
+                  className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded text-[9px] font-mono"
+                  title="Increase Target Profit by $25"
+                >
+                  +25
+                </button>
+              </div>
+            </div>
+
+            {/* Stop Loss (Directly Editable) */}
+            <div className="bg-[#070B16] border border-slate-850 hover:border-rose-500/40 p-1.5 sm:p-2 rounded-xl transition flex flex-col justify-between">
+              <div className="flex items-center justify-center space-x-1 text-[9px] font-mono text-slate-400 uppercase font-bold mb-0.5">
+                <span>⚠️</span>
+                <span>STOP LOSS ($)</span>
+              </div>
+              <div className="flex items-center justify-center space-x-0.5 my-0.5">
+                <span className="text-xs font-mono font-bold text-rose-400/80">$</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="10"
+                  value={stopLoss || ''}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setStopLoss(isNaN(val) ? 0 : val);
+                  }}
+                  onBlur={() => {
+                    if (!stopLoss || stopLoss < 1) setStopLoss(10);
+                  }}
+                  className="w-full text-center text-xs sm:text-sm font-mono font-bold text-rose-400 bg-slate-950/70 border border-slate-800 focus:border-rose-500 rounded py-0.5 focus:outline-none"
+                />
+              </div>
+              <div className="flex items-center justify-center space-x-1 pt-0.5">
+                <button 
+                  type="button" 
+                  onClick={() => { playSound('click'); setStopLoss(Math.max(10, stopLoss - 25)); }}
+                  className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded text-[9px] font-mono"
+                  title="Decrease Stop Loss by $25"
+                >
+                  -25
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => { playSound('click'); setStopLoss(stopLoss + 25); }}
+                  className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded text-[9px] font-mono"
+                  title="Increase Stop Loss by $25"
+                >
+                  +25
+                </button>
+              </div>
+            </div>
+
+            {/* Multiplier / Duration (Interactive with Modal) */}
+            <div 
+              onClick={() => {
+                playSound('click');
+                setDurationModalOpen(true);
+              }}
+              className="bg-[#070B16] border border-slate-850 hover:border-cyan-500/50 p-1.5 sm:p-2 rounded-xl transition flex flex-col justify-between cursor-pointer group"
+              title="Click to customize duration and multiplier"
+            >
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 uppercase font-bold mb-0.5 px-0.5">
+                <span className="flex items-center space-x-1">
+                  <span>⚡</span>
+                  <span>MULT / DUR</span>
+                </span>
+                <span className="text-[8px] text-cyan-400 underline font-semibold">EDIT</span>
+              </div>
+              <div className="my-0.5 py-0.5 bg-slate-950/70 border border-slate-800 rounded flex items-center justify-center group-hover:border-cyan-500/50 transition">
+                <p className="text-xs sm:text-sm font-mono font-bold text-cyan-300">
+                  x{multiplier} / {optionDuration}s
+                </p>
+              </div>
+              <div className="flex items-center justify-center space-x-1 pt-0.5">
+                <span className="text-[9px] font-mono text-slate-500 group-hover:text-cyan-300 transition">
+                  Tap to edit
+                </span>
+              </div>
+            </div>
+
           </div>
+
+          {/* Conditional Target Digit Selector (for Over/Under and Matches/Differs) */}
+          {(activeContractType === 'over_under' || activeContractType === 'matches_differ') && (
+            <div className="bg-[#070B16] border border-slate-850 rounded-xl p-1.5">
+              <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 mb-1 px-1">
+                <span>Select Target Digit:</span>
+                <span className="font-bold text-teal-400">Selected: {predictionDigit}</span>
+              </div>
+              <div className="grid grid-cols-10 gap-1">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+                  <button
+                    key={`targ-${d}`}
+                    type="button"
+                    onClick={() => {
+                      playSound('click');
+                      setPredictionDigit(d);
+                    }}
+                    className={`py-1 rounded font-mono text-xs font-bold transition cursor-pointer ${
+                      predictionDigit === d
+                        ? 'bg-teal-500 text-slate-950 font-black'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 6. MAIN TRADE ACTIONS (Large Side-by-Side High-Contrast Touch Buttons) */}
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            
+            {/* Case A: Even / Odd Mode */}
+            {activeContractType === 'even_odd' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleTrade('even', 'buy')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Even</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTrade('odd', 'sell')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Odd</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Case B: Matches / Differs Mode */}
+            {activeContractType === 'matches_differ' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleTrade('matches', 'buy')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 hover:from-purple-500 hover:to-indigo-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-purple-500/20 flex flex-col items-center justify-center space-y-0.5 border border-purple-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Matches {predictionDigit}</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
+                    {matchesPayoutDisplay} (9.5x)
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-purple-200">
+                    +850% Jackpot
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTrade('differs', 'sell')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-teal-500/20 flex flex-col items-center justify-center space-y-0.5 border border-teal-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Differs ≠ {predictionDigit}</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Case C: Over / Under Mode */}
+            {activeContractType === 'over_under' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleTrade('over', 'buy')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Over &gt; {predictionDigit}</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTrade('under', 'sell')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 hover:from-cyan-500 hover:to-blue-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-cyan-500/20 flex flex-col items-center justify-center space-y-0.5 border border-cyan-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Under &lt; {predictionDigit}</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Case D: Rise / Fall Mode */}
+            {activeContractType === 'rise_fall' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleTrade('rise', 'buy')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 active:scale-[0.98] text-slate-950 transition cursor-pointer shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center space-y-0.5 border border-emerald-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Rise ▲</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-slate-950/90">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-slate-950/20 px-2 py-0.5 rounded-full text-slate-950">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTrade('fall', 'sell')}
+                  className="p-3 sm:p-4 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-400 active:scale-[0.98] text-white transition cursor-pointer shadow-lg shadow-rose-500/20 flex flex-col items-center justify-center space-y-0.5 border border-rose-400/40"
+                >
+                  <span className="text-base sm:text-lg font-black tracking-tight">Fall ▼</span>
+                  <span className="text-[11px] sm:text-xs font-mono font-extrabold text-white/95">
+                    {estimatedPayoutDisplay} Payout
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full text-rose-200">
+                    +{(yieldRate * 100).toFixed(1)}% Return
+                  </span>
+                </button>
+              </>
+            )}
+
+          </div>
+
         </div>
 
-        {/* Asset Search Dropdown Popover */}
-        {assetSearchOpen && (
-          <div className="absolute left-2 top-12 w-80 max-w-[92vw] bg-[#090D1A] border border-slate-800 rounded-xl shadow-2xl p-3 z-50 space-y-2 animate-fade-in">
-            <div className="flex justify-between items-center border-b border-slate-850 pb-1.5">
-              <span className="text-xs font-bold text-slate-300">Select Market Asset</span>
-              <button onClick={() => setAssetSearchOpen(false)} className="text-slate-500 hover:text-slate-300">
+      </div>
+
+      {/* 7. FIXED MOBILE BOTTOM NAVIGATION (Live Chat, AI Scanner, Active Positions Sheet Trigger) */}
+      <div className="lg:hidden w-full h-12 bg-[#090D1A] border-t border-slate-850 px-3 flex items-center justify-between z-40 flex-shrink-0 mt-1">
+        
+        {/* Live Chat Trigger */}
+        <button
+          type="button"
+          onClick={() => {
+            playSound('click');
+            setChatOpen(true);
+          }}
+          className="flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-teal-300 py-1 transition cursor-pointer"
+        >
+          <MessageSquare className="w-4 h-4 text-cyan-400" />
+          <span className="text-[9px] font-bold font-sans mt-0.5">Live Chat</span>
+        </button>
+
+        {/* Center Prominent Glowing AI Scanner Button */}
+        <button
+          type="button"
+          onClick={() => {
+            playSound('click');
+            navigate('/scanner');
+          }}
+          className="flex flex-col items-center justify-center -mt-4 group cursor-pointer"
+        >
+          <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-teal-500 to-cyan-400 p-0.5 shadow-lg shadow-teal-500/30 group-active:scale-95 transition">
+            <div className="w-full h-full bg-[#070B16] rounded-full flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-teal-400 animate-pulse" />
+            </div>
+          </div>
+          <span className="text-[9px] font-black text-teal-300 uppercase tracking-wider mt-0.5">AI</span>
+        </button>
+
+        {/* Positions Drawer Trigger */}
+        <button
+          type="button"
+          onClick={() => {
+            playSound('click');
+            setPositionsSheetOpen(true);
+          }}
+          className="flex-1 flex flex-col items-center justify-center text-slate-400 hover:text-teal-300 py-1 transition cursor-pointer relative"
+        >
+          <div className="relative">
+            <Clock className="w-4 h-4 text-teal-400" />
+            {openPositions.length > 0 && (
+              <span className="absolute -top-1.5 -right-2 px-1 py-0.2 bg-teal-400 text-slate-950 font-mono font-black text-[8px] rounded-full">
+                {openPositions.length}
+              </span>
+            )}
+          </div>
+          <span className="text-[9px] font-bold font-sans mt-0.5">Positions</span>
+        </button>
+
+      </div>
+
+      {/* ASSET SELECTOR MODAL */}
+      {assetSearchOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200]" 
+            onClick={() => setAssetSearchOpen(false)} 
+          />
+          <div className="fixed inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 top-16 sm:top-20 w-full sm:w-[480px] bg-[#090D1A] border border-slate-800 rounded-3xl p-4 shadow-2xl z-[210] max-h-[80vh] flex flex-col animate-fade-in">
+            
+            <div className="flex justify-between items-center pb-3 border-b border-slate-850">
+              <div className="flex items-center space-x-2">
+                <BarChart2 className="w-5 h-5 text-teal-400" />
+                <span className="font-bold text-slate-100 text-sm">Select Instrument</span>
+              </div>
+              <button 
+                onClick={() => setAssetSearchOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Search Input */}
+            <div className="relative my-3">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={assetSearch}
+                onChange={(e) => setAssetSearch(e.target.value)}
+                placeholder="Search index, currency, crypto..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                autoFocus
+              />
+            </div>
+
             {/* Category Filter Tabs */}
-            <div className="flex flex-wrap gap-1 bg-slate-950 p-1 border border-slate-850 rounded-lg text-[9px] font-bold uppercase">
-              {(['all', 'vol_index', 'crypto', 'forex', 'indices', 'commodities'] as const).map(cat => (
+            <div className="flex space-x-1 pb-2 overflow-x-auto scrollbar-none text-[10px] font-mono">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'vol_index', label: 'Synthetics' },
+                { id: 'crypto', label: 'Crypto' },
+                { id: 'forex', label: 'Forex' },
+                { id: 'indices', label: 'Indices' },
+                { id: 'commodities', label: 'Commodities' },
+              ].map(cat => (
                 <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setActiveCategoryFilter(cat)}
-                  className={`px-1.5 py-1 rounded transition cursor-pointer ${
-                    activeCategoryFilter === cat 
-                      ? 'bg-slate-900 text-teal-400 border border-slate-800 font-black' 
-                      : 'text-slate-500 hover:text-slate-300'
+                  key={cat.id}
+                  onClick={() => setActiveCategoryFilter(cat.id as any)}
+                  className={`px-2.5 py-1 rounded-lg whitespace-nowrap transition ${
+                    activeCategoryFilter === cat.id
+                      ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {cat === 'vol_index' ? 'Synthetics' : cat === 'indices' ? 'Stocks' : cat}
+                  {cat.label}
                 </button>
               ))}
             </div>
 
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-500" />
-              <input 
-                type="text" 
-                placeholder="Search symbol..." 
-                value={assetSearch}
-                onChange={(e) => setAssetSearch(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-850 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500/50 font-mono"
-              />
-            </div>
-
-            {/* Asset List */}
-            <div className="space-y-1 max-h-48 overflow-y-auto pr-1 scrollbar-thin">
-              {prices
-                .filter(p => {
-                  const matchesSearch = p.name.toLowerCase().includes(assetSearch.toLowerCase()) || p.symbol.toLowerCase().includes(assetSearch.toLowerCase());
-                  const matchesCat = activeCategoryFilter === 'all' || p.category === activeCategoryFilter;
-                  return matchesSearch && matchesCat;
-                })
-                .map(p => {
-                  const isSelected = p.symbol === selectedSymbol;
-                  const changeUp = p.change24h >= 0;
-                  return (
-                    <div 
-                      key={p.symbol}
-                      onClick={() => { setSelectedSymbol(p.symbol); setAssetSearchOpen(false); }}
-                      className={`p-2 hover:bg-slate-950 border border-transparent hover:border-slate-800 rounded-lg text-xs flex justify-between items-center cursor-pointer transition ${
-                        isSelected ? 'bg-teal-500/10 border-teal-500/30 text-teal-400 font-bold' : 'text-slate-350'
-                      }`}
-                    >
-                      <div>
-                        <p className="font-bold text-slate-200">{p.name}</p>
-                        <span className="text-[9px] text-slate-500 uppercase font-mono">{p.symbol}</span>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono font-bold text-slate-100">${p.price.toFixed(2)}</p>
-                        <span className={`text-[9px] font-mono font-bold ${changeUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {changeUp ? '+' : ''}{p.change24h.toFixed(2)}%
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              }
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main Desktop Grid & Mobile Viewport Layout */}
-      <div className="grid lg:grid-cols-12 gap-2.5 flex-1 min-h-0">
-        
-        {/* LEFT / CENTER WORKSPACE (8 Columns on Desktop): Compact Chart + Adjacent Compact Panels */}
-        <div className="lg:col-span-8 flex flex-col min-h-0 space-y-2.5">
-          
-          {/* 1. COMPACT CHART PANEL */}
-          <div className="flex-1 min-h-[220px] max-h-[380px] lg:max-h-[360px] flex flex-col min-h-0 bg-[#090D1A] border border-slate-800 rounded-xl overflow-hidden p-1.5 shadow-lg">
-            <TradingChart symbol={selectedSymbol} currentPrice={currentMarket.price} />
-          </div>
-
-          {/* 2. ADJACENT COMPACT PANELS: Order Book / Digit Stats + Open Positions / History */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 h-auto md:h-[190px] lg:h-[210px] min-h-0">
-            
-            {/* Panel A: Digit Statistics & Order Book Depth */}
-            <div className="bg-[#090D1A] border border-slate-800 rounded-xl p-2.5 flex flex-col min-h-0 shadow-lg space-y-2">
-              <div className="flex justify-between items-center flex-shrink-0">
-                <div className="flex items-center space-x-1.5">
-                  <Activity className="w-3.5 h-3.5 text-teal-400" />
-                  <span className="text-xs font-bold text-slate-200">Digit Frequency Stats</span>
-                </div>
-                <span className="text-[10px] font-mono text-teal-400 flex items-center space-x-1 animate-pulse">
-                  <Circle className="w-1.5 h-1.5 fill-teal-400" />
-                  <span>50 Ticks</span>
-                </span>
-              </div>
-
-              {/* 10 Digit Stats Row */}
-              <div className="grid grid-cols-10 gap-1 flex-1 min-h-0 items-center">
-                {digitStats.map(({ digit, percentage }) => {
-                  const isActive = lastDigit === digit;
-                  return (
-                    <div 
-                      key={digit} 
-                      className={`flex flex-col items-center justify-center p-1 rounded-lg border h-full transition ${
-                        isActive 
-                          ? 'bg-teal-500/20 border-teal-400 text-teal-300 font-bold scale-105 shadow-md shadow-teal-500/20' 
-                          : 'bg-slate-950 border-slate-850 text-slate-400'
-                      }`}
-                    >
-                      <span className="text-xs font-mono font-black">{digit}</span>
-                      <div className="w-full bg-slate-900 h-1 rounded overflow-hidden my-1">
-                        <div 
-                          className={`h-full ${isActive ? 'bg-teal-400' : 'bg-slate-600'}`} 
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-[8px] font-mono">{percentage}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Compact Market Depth Tick Bar */}
-              <div className="flex justify-between items-center bg-slate-950 px-2 py-1 border border-slate-850 rounded-lg text-[10px] font-mono text-slate-400 flex-shrink-0">
-                <span>Distribution:</span>
-                <span className="text-emerald-400 font-bold">Even {digitStats.filter(s => s.digit % 2 === 0).reduce((acc, s) => acc + s.percentage, 0)}%</span>
-                <span className="text-rose-400 font-bold">Odd {digitStats.filter(s => s.digit % 2 !== 0).reduce((acc, s) => acc + s.percentage, 0)}%</span>
-              </div>
-            </div>
-
-            {/* Panel B: Open Positions & Order History */}
-            <div className="bg-[#090D1A] border border-slate-800 rounded-xl p-2.5 flex flex-col min-h-0 shadow-lg space-y-2">
-              
-              {/* Header Tab Buttons */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 border border-slate-850 rounded-lg flex-shrink-0">
-                <button 
-                  onClick={() => setLeftTab('open')} 
-                  className={`py-1 rounded text-[10px] font-bold uppercase transition ${
-                    leftTab === 'open' 
-                      ? 'bg-slate-900 text-teal-400 border border-slate-800 font-black' 
-                      : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  Active ({openPositions.length})
-                </button>
-                <button 
-                  onClick={() => setLeftTab('closed')} 
-                  className={`py-1 rounded text-[10px] font-bold uppercase transition ${
-                    leftTab === 'closed' 
-                      ? 'bg-slate-900 text-teal-400 border border-slate-800 font-black' 
-                      : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  History ({closedTrades.length})
-                </button>
-                <button 
-                  onClick={() => setLeftTab('ledger')} 
-                  className={`py-1 rounded text-[10px] font-bold uppercase transition ${
-                    leftTab === 'ledger' 
-                      ? 'bg-slate-900 text-teal-400 border border-slate-800 font-black' 
-                      : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  Audit
-                </button>
-              </div>
-
-              {/* Scrollable Content List */}
-              <div className="flex-1 overflow-y-auto min-h-0 space-y-1.5 pr-1 scrollbar-thin">
-                {leftTab === 'open' && (
-                  openPositions.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-[11px] space-y-1 py-4">
-                      <Clock className="w-5 h-5 text-slate-600" />
-                      <span>No active contracts.</span>
-                    </div>
-                  ) : (
-                    openPositions.map(pos => {
-                      const secondsRemaining = pos.expiryTime 
-                        ? Math.max(0, Math.ceil((new Date(pos.expiryTime).getTime() - Date.now()) / 1000))
-                        : 0;
-
-                      const displayStakeStr = tradeCurrency === 'KES'
-                        ? `KES ${(pos.quantity * rate).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                        : `$${pos.quantity.toFixed(2)}`;
-
-                      return (
-                        <div key={pos.id} className="bg-slate-950 border border-slate-850 rounded-lg p-2 space-y-1.5 hover:border-slate-700 transition">
-                          <div className="flex justify-between items-center text-[11px]">
-                            <span className="font-mono font-bold text-slate-300">{pos.symbol}</span>
-                            <span className={`text-[9px] uppercase font-mono px-1.5 py-0.2 rounded font-bold ${
-                              pos.type === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                            }`}>
-                              {pos.contractType ? pos.contractType.replace('_', ' ') : pos.type}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between items-center text-[10px] font-mono">
-                            <span className="text-slate-400">Stake: <strong className="text-slate-200">{displayStakeStr}</strong></span>
-                            <span className="text-teal-400 font-bold animate-pulse">{secondsRemaining}s remaining</span>
-                          </div>
-
-                          <button 
-                            onClick={() => closePositionEarly(pos.id)}
-                            className="w-full py-1 text-[9px] bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white rounded font-bold uppercase transition cursor-pointer"
-                          >
-                            Settle Early
-                          </button>
-                        </div>
-                      );
-                    })
-                  )
-                )}
-
-                {leftTab === 'closed' && (
-                  closedTrades.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-slate-600 text-[11px] py-4">
-                      No contract settlement history.
-                    </div>
-                  ) : (
-                    [...closedTrades].reverse().slice(0, 15).map(pos => {
-                      const won = pos.pnl > 0;
-                      const pnlDisplay = tradeCurrency === 'KES' 
-                        ? `KES ${(pos.pnl * rate).toLocaleString(undefined, { maximumFractionDigits: 0 })}` 
-                        : `$${pos.pnl.toFixed(2)}`;
-
-                      return (
-                        <div key={pos.id} className="bg-slate-950 border border-slate-850 rounded-lg p-2 flex justify-between items-center text-[10px] font-mono">
-                          <div>
-                            <span className="font-bold text-slate-300 mr-2">{pos.symbol}</span>
-                            <span className="text-slate-500">${pos.quantity}</span>
-                          </div>
-                          <span className={`font-bold px-1.5 py-0.2 rounded ${
-                            won ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                          }`}>
-                            {won ? `+${pnlDisplay}` : pnlDisplay}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )
-                )}
-
-                {leftTab === 'ledger' && (
-                  <div className="space-y-1.5 text-[10px] font-mono text-slate-400">
-                    {closedTrades.slice(0, 6).map(t => (
-                      <div key={t.id} className="border-l-2 border-teal-500/30 pl-2 py-0.5 bg-slate-950/60 rounded-r">
-                        <span>[{new Date(t.createdAt).toLocaleTimeString()}] Settled: </span>
-                        <span className={t.pnl > 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                          {t.pnl > 0 ? 'WIN' : 'LOSS'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-        {/* RIGHT ORDER EXECUTION PANEL (4 Columns on Desktop): All Controls Visible in Viewport */}
-        <div className="lg:col-span-4 flex flex-col min-h-0">
-          <div className="bg-[#090D1A] border border-slate-800 rounded-xl p-3 shadow-lg flex flex-col justify-between h-full min-h-0 overflow-y-auto space-y-2.5">
-            
-            {/* 1. Derivative Type Selection Tabs */}
-            <div>
-              <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1 font-bold">
-                Contract Type
-              </label>
-              <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 border border-slate-850 rounded-lg text-[10px]">
-                {(['rise_fall', 'even_odd', 'over_under', 'matches_differ'] as const).map(type => (
-                  <button 
-                    key={type}
-                    type="button"
+            {/* Assets List */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin max-h-[340px]">
+              {filteredMarkets.map((market) => {
+                const isSelected = market.symbol === selectedSymbol;
+                const isPos = market.change24h >= 0;
+                return (
+                  <div
+                    key={market.symbol}
                     onClick={() => {
-                      setActiveContractType(type);
-                      if (type === 'rise_fall') setSelectedPrediction('rise');
-                      else if (type === 'even_odd') setSelectedPrediction('even');
-                      else if (type === 'over_under') setSelectedPrediction('over');
-                      else if (type === 'matches_differ') setSelectedPrediction('match');
+                      playSound('click');
+                      setSelectedSymbol(market.symbol);
+                      setAssetSearchOpen(false);
                     }}
-                    className={`py-1.5 rounded text-center transition uppercase cursor-pointer ${
-                      activeContractType === type 
-                        ? 'bg-slate-900 text-teal-400 border border-slate-800 font-black' 
-                        : 'text-slate-500 hover:text-slate-300'
+                    className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-teal-500/10 border-teal-500/50 text-slate-100'
+                        : 'bg-slate-950/60 border-slate-900 hover:bg-slate-900/60 text-slate-300'
                     }`}
                   >
-                    {type === 'rise_fall' ? 'Rise/Fall' : type === 'even_odd' ? 'Even/Odd' : type === 'over_under' ? 'Over/Under' : 'Matches'}
-                  </button>
-                ))}
-              </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold text-xs text-slate-100">{market.name}</span>
+                        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-850 text-slate-400">
+                          {market.category}
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-mono text-slate-500">{market.symbol}</p>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="font-mono font-bold text-xs text-slate-100">
+                        ${market.price.toFixed(market.category === 'forex' ? 4 : 2)}
+                      </p>
+                      <p className={`font-mono text-[10px] font-semibold ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {isPos ? '+' : ''}{market.change24h.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* 2. Stake Input + Currency Switcher + Quick Presets */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-[10px] font-mono">
-                <span className="text-slate-400 font-bold">Stake ({tradeCurrency}):</span>
-                <button 
-                  type="button"
-                  onClick={() => handleCurrencyToggle(tradeCurrency === 'KES' ? 'USD' : 'KES')}
-                  className="text-teal-400 hover:underline font-bold uppercase cursor-pointer"
-                >
-                  Switch to {tradeCurrency === 'KES' ? 'USD' : 'KES'}
-                </button>
+          </div>
+        </>
+      )}
+
+      {/* MOBILE POSITIONS & AUDIT BOTTOM SHEET */}
+      {positionsSheetOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200]" 
+            onClick={() => setPositionsSheetOpen(false)} 
+          />
+          <div className="fixed inset-x-0 bottom-0 max-h-[85vh] bg-[#090D1A] border-t border-slate-800 rounded-t-3xl p-4 shadow-2xl z-[210] flex flex-col animate-slide-up">
+            
+            <div className="flex justify-between items-center pb-3 border-b border-slate-850">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-teal-400" />
+                <span className="font-bold text-slate-100 text-sm">Trading History & Live Contracts</span>
               </div>
-
-              <div className="relative">
-                <input 
-                  type="number" 
-                  step="any"
-                  value={inputStake}
-                  onChange={(e) => setInputStake(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-teal-500/50 focus:outline-none rounded-lg px-3 py-2 text-sm font-mono font-bold text-slate-100"
-                />
-                <span className="absolute right-3 top-2 text-xs font-mono font-bold text-slate-500">
-                  {tradeCurrency}
-                </span>
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="grid grid-cols-4 gap-1 pt-0.5">
-                {tradeCurrency === 'KES' ? (
-                  [100, 500, 1000, 5000].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => handleAddPreset(amt)}
-                      className="py-1 bg-slate-950 border border-slate-850 hover:border-slate-750 text-slate-300 rounded text-[9px] font-mono font-bold cursor-pointer transition"
-                    >
-                      +{amt}
-                    </button>
-                  ))
-                ) : (
-                  [5, 10, 25, 50].map(amt => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => handleAddPreset(amt)}
-                      className="py-1 bg-slate-950 border border-slate-850 hover:border-slate-750 text-slate-300 rounded text-[9px] font-mono font-bold cursor-pointer transition"
-                    >
-                      +${amt}
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* 3. Duration Selector */}
-            <div>
-              <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1 font-bold">
-                Expiry Duration
-              </label>
-              <div className="grid grid-cols-5 gap-1">
-                {[5, 10, 15, 30, 60].map(sec => (
-                  <button 
-                    key={sec}
-                    type="button"
-                    onClick={() => setOptionDuration(sec)}
-                    className={`py-1.5 bg-slate-950 border rounded font-mono text-xs cursor-pointer transition ${
-                      optionDuration === sec 
-                        ? 'border-teal-500/50 text-teal-400 bg-teal-500/10 font-bold' 
-                        : 'border-slate-850 text-slate-400 hover:border-slate-750'
-                    }`}
-                  >
-                    {sec}s
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Target Digit Selector (Over/Under or Matches) */}
-            {(activeContractType === 'over_under' || activeContractType === 'matches_differ') && (
-              <div>
-                <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1 font-bold">
-                  Target Digit
-                </label>
-                <div className="grid grid-cols-5 gap-1 bg-slate-950 p-1 border border-slate-850 rounded-lg">
-                  {[0, 2, 4, 6, 8].map(d => (
-                    <button 
-                      key={d}
-                      type="button"
-                      onClick={() => setPredictionDigit(d)}
-                      className={`py-1 text-xs font-mono rounded transition ${
-                        predictionDigit === d ? 'bg-slate-900 text-teal-400 border border-slate-750 font-bold' : 'text-slate-500'
-                      }`}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 4. Potential Payout Return Card */}
-            <div className="bg-slate-950 border border-slate-850 rounded-lg p-2.5 space-y-1 text-xs font-mono">
-              <div className="flex justify-between text-slate-400">
-                <span>Return Rate:</span>
-                <span className="font-bold text-emerald-400">+{(yieldRate * 100).toFixed(0)}%</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Profit:</span>
-                <span className="font-bold text-teal-400">
-                  {tradeCurrency === 'KES' ? `KES ${potentialProfitNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${potentialProfitNum.toFixed(2)}`}
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-200 border-t border-slate-850 pt-1 font-bold">
-                <span>Total Payout:</span>
-                <span className="text-emerald-400">
-                  {tradeCurrency === 'KES' ? `KES ${potentialPayoutNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : `$${potentialPayoutNum.toFixed(2)}`}
-                </span>
-              </div>
-            </div>
-
-            {/* 5. Order Action Buttons */}
-            <div className="space-y-2 pt-1 border-t border-slate-850">
-              {activeContractType === 'rise_fall' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('rise', 'buy')}
-                    className="py-3 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs rounded-xl uppercase transition flex flex-col items-center justify-center cursor-pointer shadow-lg shadow-emerald-500/10"
-                  >
-                    <TrendingUp className="w-5 h-5 mb-0.5" />
-                    <span>RISE</span>
-                  </button>
-
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('fall', 'sell')}
-                    className="py-3 bg-rose-500 hover:bg-rose-400 active:scale-95 text-slate-950 font-black text-xs rounded-xl uppercase transition flex flex-col items-center justify-center cursor-pointer shadow-lg shadow-rose-500/10"
-                  >
-                    <TrendingDown className="w-5 h-5 mb-0.5" />
-                    <span>FALL</span>
-                  </button>
-                </div>
-              )}
-
-              {activeContractType === 'even_odd' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('even', 'buy')}
-                    className="py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>EVEN</span>
-                  </button>
-
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('odd', 'sell')}
-                    className="py-3 bg-rose-500 hover:bg-rose-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>ODD</span>
-                  </button>
-                </div>
-              )}
-
-              {activeContractType === 'over_under' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('over', 'buy')}
-                    className="py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>OVER</span>
-                  </button>
-
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('under', 'sell')}
-                    className="py-3 bg-rose-500 hover:bg-rose-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>UNDER</span>
-                  </button>
-                </div>
-              )}
-
-              {activeContractType === 'matches_differ' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('match', 'buy')}
-                    className="py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>MATCHES</span>
-                  </button>
-
-                  <button 
-                    type="button"
-                    onClick={() => handleOpenTrade('differ', 'sell')}
-                    className="py-3 bg-rose-500 hover:bg-rose-400 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center cursor-pointer"
-                  >
-                    <span>DIFFER</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Bot Toggle Button */}
               <button 
-                type="button"
-                onClick={() => setTradingBotActive(!tradingBotActive)}
-                className={`w-full py-1.5 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                  tradingBotActive 
-                    ? 'bg-teal-500 text-slate-950 hover:bg-teal-400 animate-pulse font-black' 
-                    : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
-                }`}
+                onClick={() => setPositionsSheetOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-850"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{tradingBotActive ? 'AI Bot Running' : 'Engage Smart Bot'}</span>
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-          </div>
-        </div>
-
-      </div>
-
-      {/* MOBILE STICKY BOTTOM TRADING BAR (Instant 1-Thumb Order Execution) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-[#070B16]/95 backdrop-blur-xl border-t border-slate-800 p-2 shadow-2xl">
-        <div className="max-w-md mx-auto space-y-1.5">
-          
-          <div className="flex items-center justify-between gap-1.5 text-xs font-mono">
-            <div className="flex-1 flex items-center bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
-              <span className="text-[9px] text-slate-500 uppercase font-bold mr-1">{tradeCurrency}:</span>
-              <input 
-                type="number" 
-                value={inputStake}
-                onChange={(e) => setInputStake(e.target.value)}
-                className="w-full bg-transparent text-slate-100 font-bold focus:outline-none text-xs"
-              />
+            {/* Sheet Tabs */}
+            <div className="flex space-x-2 my-3">
+              <button
+                onClick={() => setCenterTab('active')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
+                  centerTab === 'active' 
+                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40' 
+                    : 'bg-slate-900 text-slate-400'
+                }`}
+              >
+                Active ({openPositions.length})
+              </button>
+              <button
+                onClick={() => setCenterTab('history')}
+                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
+                  centerTab === 'history' 
+                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40' 
+                    : 'bg-slate-900 text-slate-400'
+                }`}
+              >
+                Closed ({closedTrades.length})
+              </button>
             </div>
 
-            <select
-              value={optionDuration}
-              onChange={(e) => setOptionDuration(Number(e.target.value))}
-              className="bg-slate-950 border border-slate-800 text-teal-400 font-bold text-xs rounded-lg px-2 py-1 focus:outline-none"
-            >
-              {[5, 10, 15, 30, 60].map(s => (
-                <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}s</option>
-              ))}
-            </select>
+            {/* List Content */}
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[50vh] scrollbar-thin">
+              {centerTab === 'active' && (
+                openPositions.length === 0 ? (
+                  <p className="text-center text-slate-500 text-xs py-8 font-mono">No active running contracts.</p>
+                ) : (
+                  openPositions.map(pos => (
+                    <div key={pos.id} className="p-3 bg-slate-950 border border-slate-850 rounded-2xl flex justify-between items-center text-xs font-mono">
+                      <div>
+                        <p className="font-bold text-slate-100">{pos.symbol}</p>
+                        <p className="text-[10px] text-teal-400 uppercase font-bold">{pos.prediction || pos.type}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-slate-200">${pos.quantity}</p>
+                        <button 
+                          onClick={() => closePositionEarly(pos.id)}
+                          className="mt-1 px-2.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[10px] hover:bg-rose-500/30"
+                        >
+                          Early Settle
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )
+              )}
 
+              {centerTab === 'history' && (
+                closedTrades.length === 0 ? (
+                  <p className="text-center text-slate-500 text-xs py-8 font-mono">No settled trades in session history.</p>
+                ) : (
+                  closedTrades.slice(0, 15).map(trade => {
+                    const isWin = trade.pnl > 0;
+                    return (
+                      <div key={trade.id} className="p-3 bg-slate-950 border border-slate-850 rounded-2xl flex justify-between items-center text-xs font-mono">
+                        <div>
+                          <p className="font-bold text-slate-100">{trade.symbol}</p>
+                          <p className="text-[10px] text-slate-400">{new Date(trade.createdAt || Date.now()).toLocaleTimeString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-bold ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isWin ? `+$${trade.pnl.toFixed(2)}` : `-$${Math.abs(trade.pnl).toFixed(2)}`}
+                          </p>
+                          <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded ${isWin ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                            {isWin ? 'WON' : 'LOST'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )
+              )}
+            </div>
+
+          </div>
+        </>
+      )}
+
+      {/* DURATION & MULTIPLIER CONFIGURATION MODAL */}
+      {durationModalOpen && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200]" 
+            onClick={() => setDurationModalOpen(false)} 
+          />
+          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 max-w-sm mx-auto bg-[#090D1A] border border-slate-800 rounded-3xl p-5 shadow-2xl z-[210] flex flex-col space-y-4 animate-scale-up">
+            
+            <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+              <div className="flex items-center space-x-2">
+                <Zap className="w-5 h-5 text-cyan-400" />
+                <span className="font-bold text-slate-100 text-sm">Contract Duration & Multiplier</span>
+              </div>
+              <button 
+                onClick={() => setDurationModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-850"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Duration Section */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider flex justify-between">
+                <span>Duration (Ticks / Seconds)</span>
+                <span className="text-cyan-400 font-bold">{optionDuration}s</span>
+              </label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { label: '1s (1T)', val: 1 },
+                  { label: '2s', val: 2 },
+                  { label: '5s', val: 5 },
+                  { label: '10s', val: 10 },
+                  { label: '15s', val: 15 },
+                  { label: '30s', val: 30 },
+                  { label: '45s', val: 45 },
+                  { label: '60s', val: 60 },
+                ].map(d => (
+                  <button
+                    key={`dur-${d.val}`}
+                    type="button"
+                    onClick={() => {
+                      playSound('click');
+                      setOptionDuration(d.val);
+                    }}
+                    className={`py-1.5 rounded-xl font-mono text-xs font-bold transition cursor-pointer border ${
+                      optionDuration === d.val
+                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-sm'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center space-x-2 pt-1">
+                <span className="text-[11px] font-mono text-slate-400">Custom (sec):</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={optionDuration || ''}
+                  onChange={(e) => setOptionDuration(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="flex-1 bg-slate-950 border border-slate-800 focus:border-cyan-400 rounded-xl px-3 py-1 text-xs font-mono font-bold text-cyan-300 focus:outline-none text-center"
+                />
+              </div>
+            </div>
+
+            {/* Multiplier Section */}
+            <div className="space-y-2 pt-2 border-t border-slate-850">
+              <label className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider flex justify-between">
+                <span>Multiplier Tier</span>
+                <span className="text-teal-400 font-bold">x{multiplier}</span>
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[1, 2, 3, 5, 10].map(m => (
+                  <button
+                    key={`mult-${m}`}
+                    type="button"
+                    onClick={() => {
+                      playSound('click');
+                      setMultiplier(m);
+                    }}
+                    className={`py-1.5 rounded-xl font-mono text-xs font-bold transition cursor-pointer border ${
+                      multiplier === m
+                        ? 'bg-teal-500/20 border-teal-400 text-teal-300 shadow-sm'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    x{m}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center space-x-2 pt-1">
+                <span className="text-[11px] font-mono text-slate-400">Custom Mult:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={multiplier || ''}
+                  onChange={(e) => setMultiplier(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="flex-1 bg-slate-950 border border-slate-800 focus:border-teal-400 rounded-xl px-3 py-1 text-xs font-mono font-bold text-teal-300 focus:outline-none text-center"
+                />
+              </div>
+            </div>
+
+            {/* Done Button */}
             <button
               type="button"
-              onClick={() => handleCurrencyToggle(tradeCurrency === 'KES' ? 'USD' : 'KES')}
-              className="bg-slate-900 border border-slate-800 text-slate-300 font-bold text-[10px] rounded-lg px-2 py-1 uppercase"
+              onClick={() => {
+                playSound('click');
+                setDurationModalOpen(false);
+                addToast('Settings Saved', `Duration: ${optionDuration}s | Multiplier: x${multiplier}`, 'success');
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/20 transition cursor-pointer"
             >
-              {tradeCurrency}
+              APPLY SETTINGS
             </button>
+
           </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button 
-              type="button"
-              onClick={() => handleOpenTrade('rise', 'buy')}
-              className="py-2.5 bg-emerald-500 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center space-x-1 shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer"
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span>RISE (+{(yieldRate * 100).toFixed(0)}%)</span>
-            </button>
-
-            <button 
-              type="button"
-              onClick={() => handleOpenTrade('fall', 'sell')}
-              className="py-2.5 bg-rose-500 text-slate-950 font-black text-xs rounded-xl uppercase transition flex items-center justify-center space-x-1 shadow-lg shadow-rose-500/20 active:scale-95 cursor-pointer"
-            >
-              <TrendingDown className="w-4 h-4" />
-              <span>FALL (+{(yieldRate * 100).toFixed(0)}%)</span>
-            </button>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Real Account Switch Confirmation Modal */}
-      <RealAccountConfirmModal
-        isOpen={confirmModalOpen}
-        onClose={() => setConfirmModalOpen(false)}
-        onConfirm={() => setIsDemo(false)}
-        realBalanceDisplay={realBalanceDisplay}
-      />
+        </>
+      )}
 
     </div>
   );

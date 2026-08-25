@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWalletStore } from '../stores/walletStore';
@@ -36,6 +36,17 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   const navigate = useNavigate();
   const { setDepositModalOpen, setWithdrawModalOpen } = useWalletStore();
   const { setActiveFilter } = useHistoryStore();
+
+  // Close drawer on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleNav = (path: string, filter?: 'all' | 'deposits' | 'withdrawals' | 'trades' | 'bonuses') => {
     if (filter) {
@@ -128,7 +139,8 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 cursor-pointer"
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[999] cursor-pointer"
+            title="Click anywhere to close menu"
           />
 
           {/* Slide-out Drawer Panel */}
@@ -136,24 +148,26 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-slate-900/95 border-r border-slate-850 backdrop-blur-lg shadow-2xl z-50 flex flex-col justify-between"
+            transition={{ type: 'spring', damping: 26, stiffness: 240 }}
+            className="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-[#0c101a] border-r border-slate-800 backdrop-blur-xl shadow-2xl z-[1000] flex flex-col justify-between"
           >
             <div className="flex-1 flex flex-col min-h-0">
               
-              {/* Header */}
-              <div className="p-6 border-b border-slate-850 flex justify-between items-center bg-slate-950/20">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-tr from-[#2563EB] to-[#10B981] rounded-xl flex items-center justify-center shadow-lg shadow-[#2563EB]/10">
-                    <TrendingUp className="w-4.5 h-4.5 text-slate-950 font-black" />
+              {/* Header with high contrast brand and clear Close button */}
+              <div className="p-4 sm:p-5 border-b border-slate-800 flex justify-between items-center bg-[#070a12]">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 bg-[#ff5b29] rounded-xl flex items-center justify-center shadow-md shadow-[#ff5b29]/25 shrink-0">
+                    <span className="font-sans font-black text-xs sm:text-sm text-slate-950 tracking-tighter">PO</span>
                   </div>
-                  <span className="font-sans font-black text-xs uppercase tracking-widest text-slate-100">PesaOption</span>
+                  <span className="font-sans font-black text-sm text-white tracking-tight">PesaOption</span>
                 </div>
                 <button 
                   onClick={onClose}
-                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-350 transition cursor-pointer"
+                  className="flex items-center space-x-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition cursor-pointer text-xs font-bold"
+                  title="Close Navigation Menu (Esc)"
                 >
-                  <X className="w-4.5 h-4.5" />
+                  <X className="w-4 h-4" />
+                  <span>Close</span>
                 </button>
               </div>
 
