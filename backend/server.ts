@@ -229,136 +229,191 @@ function simulateTick() {
           const delta = currentPriceItem.price - trade.entryPrice;
           const rawPnl = trade.type === 'buy' ? delta : -delta;
           trade.pnl = Number((rawPnl * trade.quantity).toFixed(2));
-        } else {
-          // Binary Option Position
-          // Check if expired
-          const nowStr = new Date().toISOString();
-          const isExpired = new Date(nowStr) >= new Date(trade.expiryTime!);
-          if (isExpired) {
-            let finalPrice = currentPriceItem.price;
-            const entryPrice = trade.entryPrice;
-            
-            // Trader role check for Win Rate: 90% win rate for Admin/Owner, 50% for standard users
-            const traderUser = db.users.find(u => u.id === trade.userId);
-            const isAdminOrOwner = traderUser?.role === 'owner' || traderUser?.role === 'admin' || traderUser?.email.toLowerCase() === 'bonayafatuma58@gmail.com';
-            const winRate = isAdminOrOwner ? 0.90 : 0.50;
-            const won = Math.random() < winRate;
-
-            const decimals = currentPriceItem.category === 'forex' ? 4 : 2;
-            let lastDigit = 0;
-
-            // Adjust final price and settlement digit visually to match the win outcome
-            if (trade.contractType === 'rise_fall') {
-              const diff = Math.max(0.01, Math.abs(finalPrice - entryPrice));
-              if (won) {
-                finalPrice = trade.prediction === 'rise' ? entryPrice + diff : entryPrice - diff;
-              } else {
-                finalPrice = trade.prediction === 'rise' ? entryPrice - diff : entryPrice + diff;
-              }
-              finalPrice = Number(finalPrice.toFixed(decimals));
-              const pStr = finalPrice.toFixed(decimals);
-              lastDigit = parseInt(pStr[pStr.length - 1], 10) || 0;
-            } else if (trade.contractType === 'even_odd') {
-              if (won) {
-                lastDigit = trade.prediction === 'even' ? [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)] : [1, 3, 5, 7, 9][Math.floor(Math.random() * 5)];
-              } else {
-                lastDigit = trade.prediction === 'even' ? [1, 3, 5, 7, 9][Math.floor(Math.random() * 5)] : [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)];
-              }
-              const pStr = finalPrice.toFixed(decimals);
-              finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
-            } else if (trade.contractType === 'over_under') {
-              const parts = (trade.prediction || 'over:5').split(':');
-              const predType = parts[0];
-              const target = parseInt(parts[1], 10) || 5;
-              if (won) {
-                lastDigit = predType === 'over' ? Math.min(9, target + 1) : Math.max(0, target - 1);
-              } else {
-                lastDigit = predType === 'over' ? Math.max(0, target - 1) : Math.min(9, target + 1);
-              }
-              const pStr = finalPrice.toFixed(decimals);
-              finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
-            } else if (trade.contractType === 'matches_differ') {
-              const parts = (trade.prediction || 'match:5').split(':');
-              const predType = parts[0];
-              const target = parseInt(parts[1], 10) || 5;
-              if (won) {
-                lastDigit = predType === 'match' ? target : (target + 1) % 10;
-              } else {
-                lastDigit = predType === 'match' ? (target + 1) % 10 : target;
-              }
-              const pStr = finalPrice.toFixed(decimals);
-              finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
-            } else {
-              const pStr = finalPrice.toFixed(decimals);
-              lastDigit = parseInt(pStr[pStr.length - 1], 10) || 0;
-            }
-
-            trade.settlementDigit = lastDigit;
-
-            const payoutRate = trade.payoutRate || 0.95;
-            let finalPnl = 0;
-            let returnAmount = 0;
-            if (won) {
-              finalPnl = Number((trade.quantity * payoutRate).toFixed(2));
-              returnAmount = trade.quantity + finalPnl; // stake + profit
-            } else {
-              finalPnl = -trade.quantity; // lost stake
-              returnAmount = 0;
-            }
-
-            const usdWallet = db.wallets.find(w => w.userId === trade.userId && w.asset === 'USD');
-            if (usdWallet) {
-              if (trade.isDemo) {
-                usdWallet.demoBalance = Number((usdWallet.demoBalance + returnAmount).toFixed(2));
-              } else {
-                usdWallet.balance = Number((usdWallet.balance + returnAmount).toFixed(2));
-              }
-            }
-
-            trade.status = 'closed';
-            trade.exitPrice = finalPrice;
-            trade.pnl = finalPnl;
-            trade.closedAt = nowStr;
-
-            // Generate transaction for completed trade
-            const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
-            const txHash = '0x' + crypto.randomBytes(32).toString('hex');
-            const transaction: Transaction = {
-              id: txId,
-              userId: trade.userId,
-              walletId: usdWallet ? usdWallet.id : 'w1',
-              type: won ? 'trade_win' : 'trade_loss',
-              asset: 'USD',
-              amount: won ? returnAmount : -trade.quantity,
-              status: 'completed',
-              txHash,
-              description: won 
-                ? `Trade Win +${returnAmount.toFixed(2)} Completed`
-                : `Trade Loss -${trade.quantity.toFixed(2)} Completed`,
-              createdAt: nowStr
-            };
-            db.transactions.push(transaction);
-
-            createNotification(
-              trade.userId, 
-              `Option Settle: ${won ? 'WON' : 'LOST'}`, 
-              `Your ${trade.contractType!.toUpperCase().replace('_', ' ')} trade on ${trade.symbol} resolved at ${finalPrice} (Last digit: ${lastDigit}). Stake: $${trade.quantity}, Payout: ${won ? '+$' + finalPnl : '-$' + trade.quantity}`
-            );
-            db.save();
-          } else {
-            trade.pnl = 0; // floating is zero for binary option style
-          }
         }
       }
     }
   });
+
+  // Also settle any expired option contracts during tick
+  settleExpiredOptionContracts();
 }
 
-// Tick the prices and settle contracts at steady 1.5-second ticks
+// Active SSE Connections
+type CustomSSEResponse = express.Response & { reqUserId?: string };
+let sseClients: CustomSSEResponse[] = [];
+
+// Real-Time SSE Immediate Broadcast Helper
+function broadcastToSSEClients(targetUserId?: string) {
+  if (sseClients.length === 0) return;
+  
+  sseClients.forEach((client) => {
+    try {
+      const uId = client.reqUserId;
+      if (!targetUserId || uId === targetUserId) {
+        const payload: any = { 
+          type: 'price_feed', 
+          prices: marketPrices,
+          activeTrades: db.trades.filter(t => t.status === 'open')
+        };
+
+        if (uId) {
+          payload.wallets = db.wallets.filter(w => w.userId === uId);
+          payload.transactions = db.transactions.filter(t => t.userId === uId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+          payload.closedTrades = db.trades.filter(t => t.userId === uId && t.status === 'closed').sort((a,b) => (b.closedAt || '').localeCompare(a.closedAt || ''));
+          payload.notifications = db.notifications.filter(n => n.userId === uId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+        }
+
+        client.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+    } catch (e) {
+      // client connection closed or errored
+    }
+  });
+}
+
+// Dedicated Instant Option Contract Settlement Engine (checks every 100ms for 0ms lag)
+function settleExpiredOptionContracts() {
+  const now = Date.now();
+  let settledAny = false;
+  const affectedUserIds = new Set<string>();
+
+  db.trades.forEach(trade => {
+    if (trade.status === 'open' && trade.contractType && trade.contractType !== 'spot' && trade.expiryTime) {
+      const expTime = new Date(trade.expiryTime).getTime();
+      if (now >= expTime) {
+        const currentPriceItem = marketPrices.find(p => p.symbol === trade.symbol);
+        if (!currentPriceItem) return;
+
+        settledAny = true;
+        affectedUserIds.add(trade.userId);
+
+        const nowStr = new Date().toISOString();
+        let finalPrice = currentPriceItem.price;
+        const entryPrice = trade.entryPrice;
+        
+        // Trader role check for Win Rate: 90% win rate for Admin/Owner, 50% for standard users
+        const traderUser = db.users.find(u => u.id === trade.userId);
+        const isAdminOrOwner = traderUser?.role === 'owner' || traderUser?.role === 'admin' || traderUser?.email.toLowerCase() === 'bonayafatuma58@gmail.com';
+        const winRate = isAdminOrOwner ? 0.90 : 0.50;
+        const won = Math.random() < winRate;
+
+        const decimals = currentPriceItem.category === 'forex' ? 4 : 2;
+        let lastDigit = 0;
+
+        // Adjust final price and settlement digit visually to match the win outcome
+        if (trade.contractType === 'rise_fall') {
+          const diff = Math.max(0.01, Math.abs(finalPrice - entryPrice));
+          if (won) {
+            finalPrice = trade.prediction === 'rise' ? entryPrice + diff : entryPrice - diff;
+          } else {
+            finalPrice = trade.prediction === 'rise' ? entryPrice - diff : entryPrice + diff;
+          }
+          finalPrice = Number(finalPrice.toFixed(decimals));
+          const pStr = finalPrice.toFixed(decimals);
+          lastDigit = parseInt(pStr[pStr.length - 1], 10) || 0;
+        } else if (trade.contractType === 'even_odd') {
+          if (won) {
+            lastDigit = trade.prediction === 'even' ? [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)] : [1, 3, 5, 7, 9][Math.floor(Math.random() * 5)];
+          } else {
+            lastDigit = trade.prediction === 'even' ? [1, 3, 5, 7, 9][Math.floor(Math.random() * 5)] : [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)];
+          }
+          const pStr = finalPrice.toFixed(decimals);
+          finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
+        } else if (trade.contractType === 'over_under') {
+          const parts = (trade.prediction || 'over:5').split(':');
+          const predType = parts[0];
+          const target = parseInt(parts[1], 10) || 5;
+          if (won) {
+            lastDigit = predType === 'over' ? Math.min(9, target + 1) : Math.max(0, target - 1);
+          } else {
+            lastDigit = predType === 'over' ? Math.max(0, target - 1) : Math.min(9, target + 1);
+          }
+          const pStr = finalPrice.toFixed(decimals);
+          finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
+        } else if (trade.contractType === 'matches_differ') {
+          const parts = (trade.prediction || 'match:5').split(':');
+          const predType = parts[0];
+          const target = parseInt(parts[1], 10) || 5;
+          if (won) {
+            lastDigit = predType === 'match' ? target : (target + 1) % 10;
+          } else {
+            lastDigit = predType === 'match' ? (target + 1) % 10 : target;
+          }
+          const pStr = finalPrice.toFixed(decimals);
+          finalPrice = parseFloat(pStr.substring(0, pStr.length - 1) + lastDigit);
+        } else {
+          const pStr = finalPrice.toFixed(decimals);
+          lastDigit = parseInt(pStr[pStr.length - 1], 10) || 0;
+        }
+
+        trade.settlementDigit = lastDigit;
+
+        const payoutRate = trade.payoutRate || 0.95;
+        let finalPnl = 0;
+        let returnAmount = 0;
+        if (won) {
+          finalPnl = Number((trade.quantity * payoutRate).toFixed(2));
+          returnAmount = trade.quantity + finalPnl; // stake + profit
+        } else {
+          finalPnl = -trade.quantity; // lost stake
+          returnAmount = 0;
+        }
+
+        const usdWallet = db.wallets.find(w => w.userId === trade.userId && w.asset === 'USD');
+        if (usdWallet) {
+          if (trade.isDemo) {
+            usdWallet.demoBalance = Number((usdWallet.demoBalance + returnAmount).toFixed(2));
+          } else {
+            usdWallet.balance = Number((usdWallet.balance + returnAmount).toFixed(2));
+          }
+        }
+
+        trade.status = 'closed';
+        trade.exitPrice = finalPrice;
+        trade.pnl = finalPnl;
+        trade.closedAt = nowStr;
+
+        // Generate transaction for completed trade
+        const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
+        const txHash = '0x' + crypto.randomBytes(32).toString('hex');
+        const transaction: Transaction = {
+          id: txId,
+          userId: trade.userId,
+          walletId: usdWallet ? usdWallet.id : 'w1',
+          type: won ? 'trade_win' : 'trade_loss',
+          asset: 'USD',
+          amount: won ? returnAmount : -trade.quantity,
+          status: 'completed',
+          txHash,
+          description: won 
+            ? `Trade Win +${returnAmount.toFixed(2)} Completed`
+            : `Trade Loss -${trade.quantity.toFixed(2)} Completed`,
+          createdAt: nowStr
+        };
+        db.transactions.push(transaction);
+
+        createNotification(
+          trade.userId, 
+          `Option Settle: ${won ? 'WON' : 'LOST'}`, 
+          `Your ${trade.contractType!.toUpperCase().replace('_', ' ')} trade on ${trade.symbol} resolved at ${finalPrice} (Last digit: ${lastDigit}). Stake: $${trade.quantity}, Payout: ${won ? '+$' + finalPnl : '-$' + trade.quantity}`
+        );
+      }
+    }
+  });
+
+  if (settledAny) {
+    db.save();
+    affectedUserIds.forEach(uId => {
+      broadcastToSSEClients(uId);
+    });
+  }
+}
+
+// Tick the prices at steady 1.5-second ticks
 setInterval(simulateTick, 1500);
 
-// Active SSE Connections
-let sseClients: express.Response[] = [];
+// High-speed (100ms) contract expiration settlement engine for instant win/loss resolution
+setInterval(settleExpiredOptionContracts, 100);
 
 // ============================================================================
 // API ROUTES
@@ -372,8 +427,9 @@ app.get('/api/realtime', (req, res) => {
   res.flushHeaders();
 
   const userId = req.query.userId as string;
+  (res as CustomSSEResponse).reqUserId = userId;
 
-  sseClients.push(res);
+  sseClients.push(res as CustomSSEResponse);
 
   // Send initial load
   const initialPayload: any = { type: 'price_feed', prices: marketPrices };
@@ -1102,6 +1158,8 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
     logActivity(req.userId, 'Open Trade', `Opened ${type.toUpperCase()} position of ${qty} ${symbol} at $${assetPriceItem.price}`, req);
     createNotification(req.userId, 'Trade Executed', `Your market ${type.toUpperCase()} order for ${qty} ${symbol} filled at $${assetPriceItem.price.toLocaleString()}`);
 
+    broadcastToSSEClients(req.userId);
+
     return res.json({ message: 'Order filled', trade: newTrade, wallets: db.wallets.filter(w => w.userId === req.userId) });
   } else {
     // Binary Option Position
@@ -1149,6 +1207,8 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
 
     logActivity(req.userId, 'Buy Option Contract', `Purchased ${activeContractType.toUpperCase()} contract on ${symbol} with stake $${stake} and prediction ${prediction}`, req);
     createNotification(req.userId, 'Option Contract Placed', `Successfully placed $${stake} ${activeContractType.toUpperCase().replace('_', ' ')} contract on ${symbol} expiring in ${durationSeconds} seconds.`);
+
+    broadcastToSSEClients(req.userId);
 
     return res.json({ message: 'Contract placed', trade: newTrade, wallets: db.wallets.filter(w => w.userId === req.userId) });
   }
@@ -1227,6 +1287,8 @@ app.post('/api/trade/close', authenticate, (req: any, res) => {
 
   logActivity(req.userId, 'Close Trade', `Closed ${trade.symbol} position at $${assetPriceItem.price} with PnL of $${finalPnl}`, req);
   createNotification(req.userId, 'Trade Settled', `Settled ${trade.symbol} position. P&L: $${finalPnl > 0 ? '+' : ''}${finalPnl.toLocaleString()}`);
+
+  broadcastToSSEClients(req.userId);
 
   res.json({ message: 'Position closed and settled', trade, wallets: db.wallets.filter(w => w.userId === req.userId) });
 });

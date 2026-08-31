@@ -111,18 +111,10 @@ export const TradingDeskView: React.FC = () => {
   const activeUsdBalance = isDemo ? demoUsd : realUsd;
   const activeDisplayBalance = tradeCurrency === 'KES' ? activeUsdBalance * rate : activeUsdBalance;
 
-  // Filter open positions that are actively alive (immediately drop expired/closed items)
+  // Filter open positions that are actively alive
   const activeContracts = useMemo(() => {
-    return openPositions.filter((pos) => {
-      if (pos.status !== 'open') return false;
-      if (pos.expiryTime) {
-        const exp = new Date(pos.expiryTime).getTime();
-        // If expired by over 800ms, consider it settling and drop from live view
-        if (currentTime > exp + 800) return false;
-      }
-      return true;
-    });
-  }, [openPositions, currentTime]);
+    return openPositions.filter((pos) => pos.status === 'open');
+  }, [openPositions]);
 
   // Current selected market
   const currentMarket = getMarketBySymbol(selectedSymbol) || prices[0] || {
@@ -721,8 +713,12 @@ export const TradingDeskView: React.FC = () => {
                         </div>
                         <div className="flex items-center space-x-2">
                           {remainingSec !== null && (
-                            <span className="text-cyan-400 font-bold text-[10px] bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
-                              ⏱ {remainingSec}s
+                            <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded border transition-all ${
+                              parseFloat(remainingSec) <= 0
+                                ? 'text-amber-300 bg-amber-950/70 border-amber-500/50 animate-pulse'
+                                : 'text-cyan-400 bg-cyan-950/60 border-cyan-800/40'
+                            }`}>
+                              {parseFloat(remainingSec) <= 0 ? '⚡ Settling...' : `⏱ ${remainingSec}s`}
                             </span>
                           )}
                           <button 

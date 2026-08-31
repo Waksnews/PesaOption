@@ -6,8 +6,12 @@
 import { create } from 'zustand';
 import { Trade } from '../types';
 import { callApi } from '../lib/api';
+import { playSound } from '../lib/sound';
 import { useNotificationStore } from './notificationStore';
 import { useWalletStore } from './walletStore';
+import { useMarketStore } from './marketStore';
+
+const knownClosedIds = new Set<string>();
 
 export interface TradeState {
   openPositions: Trade[];
@@ -72,40 +76,46 @@ export const useTradeStore = create<TradeState>((set, get) => ({
   winLossNotificationQueue: [],
 
   setOpenPositions: (openPositions) => {
-    // Keep strictly open positions
-    const validOpen = openPositions.filter((p) => p.status === 'open');
+    // Keep strictly open positions and filter out any that are already known closed
+    const validOpen = openPositions.filter((p) => p.status === 'open' && !knownClosedIds.has(p.id));
     set({ openPositions: validOpen });
   },
   setClosedTrades: (closedTrades) => {
     const prevClosed = get().closedTrades;
     set({ closedTrades });
 
-    // Compare to trigger win/loss overlays
-    if (prevClosed.length > 0 && closedTrades.length > prevClosed.length) {
-      // Find new closed trades
-      const newClosed = closedTrades.filter(
-        (ct) => !prevClosed.some((pt) => pt.id === ct.id)
+    // Initialize knownClosedIds on first load
+    if (knownClosedIds.size === 0 && prevClosed.length === 0) {
+      closedTrades.forEach(t => knownClosedIds.add(t.id));
+      return;
+    }
+
+    // Find newly resolved closed trades
+    const newClosed = closedTrades.filter((ct) => !knownClosedIds.has(ct.id));
+
+    newClosed.forEach((trade) => {
+      knownClosedIds.add(trade.id);
+      const won = trade.pnl > 0;
+      
+      // Play instant audio feedback
+      playSound(won ? 'win' : 'loss');
+
+      // Add to toast notifications immediately!
+      useNotificationStore.getState().addToast(
+        won ? '🚀 Trade Won!' : '📉 Trade Settled',
+        `Contract for ${trade.symbol} ended. Result: ${won ? 'WIN (+$' + trade.pnl.toFixed(2) + ')' : 'LOSS (-$' + Math.abs(trade.pnl).toFixed(2) + ')'}`,
+        won ? 'success' : 'error'
       );
 
-      newClosed.forEach((trade) => {
-        const won = trade.pnl > 0;
-        
-        // Add to toast notifications immediately!
-        useNotificationStore.getState().addToast(
-          won ? '🚀 Trade Won!' : '📉 Trade Settled',
-          `Contract for ${trade.symbol} ended. Result: ${won ? 'WIN (+$' + trade.pnl.toFixed(2) + ')' : 'LOSS (-$' + Math.abs(trade.pnl).toFixed(2) + ')'}`,
-          won ? 'success' : 'error'
-        );
-
-        // Add to visual overlay queue for full-screen celebration/ripple!
-        set((state) => ({
-          winLossNotificationQueue: [
-            ...state.winLossNotificationQueue,
-            { id: trade.id, pnl: trade.pnl, symbol: trade.symbol, won, quantity: trade.quantity }
-          ]
-        }));
-      });
-    }
+      // Add to visual overlay queue for full-screen celebration/settlement ripple!
+      set((state) => ({
+        winLossNotificationQueue: [
+          ...state.winLossNotificationQueue,
+          { id: trade.id, pnl: trade.pnl, symbol: trade.symbol, won, quantity: trade.quantity }
+        ],
+        openPositions: state.openPositions.filter((p) => p.id !== trade.id)
+      }));
+    });
   },
   setTradingBotActive: (tradingBotActive) => set({ tradingBotActive }),
   setBotLogs: (logs) => {
@@ -161,16 +171,63 @@ export const useTradeStore = create<TradeState>((set, get) => ({
       return false;
     }
 
+    // Binary Option Mode prediction formatting
+    let predictionValue = rawPred;
+    if (effContractType === 'over_under' || effContractType === 'matches_differ') {
+      if (!predictionValue.includes(':')) {
+        predictionValue = `${predictionValue}:${effPredDigit}`;
+      }
+    }
+
+    // Instant Audio Feedback
+    playSound('trade');
+
+    // Instant Optimistic Trade Placement (0ms user-perceived latency)
+    const tempTradeId = 'tr_opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const currentMarket = useMarketStore.getState().getMarketBySymbol(symbol);
+    const entryPrice = currentMarket?.price || 100;
+    const expiryTime = new Date(Date.now() + effDuration * 1000).toISOString();
+
+    const optimisticTrade: Trade = {
+      id: tempTradeId,
+      userId: '',
+      type: effContractType === 'spot' ? type : 'buy',
+      symbol,
+      quantity: qty,
+      entryPrice,
+      status: 'open',
+      pnl: 0,
+      isDemo,
+      createdAt: new Date().toISOString(),
+      contractType: effContractType,
+      prediction: predictionValue,
+      durationSeconds: effDuration,
+      expiryTime,
+      barrier: entryPrice,
+      payoutRate: 0.95
+    };
+
+    // 1. Immediately inject optimistic trade into open positions
+    set((s) => ({
+      openPositions: [optimisticTrade, ...s.openPositions]
+    }));
+
+    // 2. Immediately deduct stake from wallet for instant balance feedback
+    const prevWallets = useWalletStore.getState().wallets;
+    const optimisticWallets = prevWallets.map(w => {
+      if (w.asset === 'USD') {
+        return {
+          ...w,
+          balance: !isDemo ? Math.max(0, Number((w.balance - qty).toFixed(2))) : w.balance,
+          demoBalance: isDemo ? Math.max(0, Number((w.demoBalance - qty).toFixed(2))) : w.demoBalance
+        };
+      }
+      return w;
+    });
+    useWalletStore.getState().setWallets(optimisticWallets);
+
     try {
       set({ tradeMsg: null });
-      
-      // Binary Option Mode prediction formatting
-      let predictionValue = rawPred;
-      if (effContractType === 'over_under' || effContractType === 'matches_differ') {
-        if (!predictionValue.includes(':')) {
-          predictionValue = `${predictionValue}:${effPredDigit}`;
-        }
-      }
 
       const res = await callApi<{ message: string; trade: Trade; wallets: any }>('/api/trade/open', {
         method: 'POST',
@@ -187,7 +244,7 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
       if (res && res.trade) {
         set((s) => ({
-          openPositions: [res.trade, ...s.openPositions.filter((p) => p.id !== res.trade.id)]
+          openPositions: [res.trade, ...s.openPositions.filter((p) => p.id !== tempTradeId && p.id !== res.trade.id)]
         }));
       }
 
@@ -195,15 +252,14 @@ export const useTradeStore = create<TradeState>((set, get) => ({
         useWalletStore.getState().setWallets(res.wallets);
       }
 
-      // Clear msg, trigger toast
-      useNotificationStore.getState().addToast(
-        'Contract Purchased',
-        `Placed $${qty.toFixed(2)} ${type.toUpperCase()} (${predictionValue}) contract on ${symbol}. Expiry: ${effDuration}s.`,
-        'info'
-      );
-
       return true;
     } catch (err: any) {
+      // Rollback optimistic state on error
+      set((s) => ({
+        openPositions: s.openPositions.filter((p) => p.id !== tempTradeId)
+      }));
+      useWalletStore.getState().setWallets(prevWallets);
+
       const errMsg = err.message || 'Could not place trade.';
       set({ tradeMsg: { text: errMsg, type: 'error' } });
       useNotificationStore.getState().addToast('Order Failed', errMsg, 'error');
