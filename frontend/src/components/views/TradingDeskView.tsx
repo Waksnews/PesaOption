@@ -225,6 +225,7 @@ export const TradingDeskView: React.FC = () => {
     if (stakeUsd > activeUsdBalance) {
       addToast('Insufficient Balance', 'Stake amount exceeds your available wallet balance. Opening Deposit...', 'error');
       setDepositModalOpen(true);
+      navigate('/deposit');
       return;
     }
 
@@ -242,8 +243,9 @@ export const TradingDeskView: React.FC = () => {
     playSound('click');
 
     if (stakeUsd > activeUsdBalance) {
-      addToast('Insufficient Balance', 'Stake amount exceeds your available balance. Please make a deposit to launch the bot.', 'error');
+      addToast('Insufficient Balance', 'Stake amount exceeds your available balance. Opening Deposit...', 'error');
       setDepositModalOpen(true);
+      navigate('/deposit');
       return;
     }
 
@@ -398,6 +400,7 @@ export const TradingDeskView: React.FC = () => {
             setTradingBotActive(false);
             addToast('Bot Paused', 'Insufficient balance to continue trading. Opening Deposit...', 'error');
             setDepositModalOpen(true);
+            navigate('/deposit');
             return {
               ...prev,
               status: 'paused',

@@ -12,6 +12,16 @@ interface RateLimitRecord {
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
 
+// Periodic pruning of expired rate limit entries to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of rateLimitStore.entries()) {
+    if (now > record.resetTime) {
+      rateLimitStore.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000);
+
 /**
  * In-memory rate limiter middleware for sensitive auth endpoints
  * Default: Maximum 5 requests per 15-minute window per IP
@@ -34,11 +44,19 @@ export function rateLimiter(maxRequests: number = 5, windowMs: number = 15 * 60 
     if (record.count >= maxRequests) {
       const minutesRemaining = Math.ceil((record.resetTime - now) / (60 * 1000));
       return res.status(429).json({
-        error: `Too many password reset requests. Please try again after ${minutesRemaining} minute(s).`,
+        success: false,
+        error: `Too many requests. Please try again after ${minutesRemaining} minute(s).`,
       });
     }
 
     record.count += 1;
     return next();
   };
+}
+
+/**
+ * High-throughput general API rate limiter (e.g. 300 requests per minute per IP)
+ */
+export function generalApiRateLimiter(maxRequests: number = 300, windowMs: number = 60 * 1000) {
+  return rateLimiter(maxRequests, windowMs);
 }

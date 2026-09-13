@@ -349,57 +349,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     sse.onmessage = (event) => {
       try {
+        if (!event.data || event.data.startsWith(':')) return; // ignore comments / keepalives
         const payload = JSON.parse(event.data);
-        if (payload.type === 'price_feed') {
-          // 1. Update general pricing feed in Zustand (high-frequency) and initial AppContext prices
+
+        // 1. High-frequency price feed update
+        if (payload.type === 'price_feed' || payload.prices) {
           if (!hasSetInitialPricesRef.current && payload.prices && payload.prices.length > 0) {
             hasSetInitialPricesRef.current = true;
             setPrices(payload.prices);
           }
-          useMarketStore.getState().setPrices(payload.prices);
           if (payload.prices && payload.prices.length > 0) {
+            useMarketStore.getState().setPrices(payload.prices);
             marketSimulationService.updateFromExternalFeed(payload.prices);
           }
-          
-          // 2. Update user's open positions if changed
-          if (payload.activeTrades && token && userId) {
-            const userOpenTrades = payload.activeTrades.filter((t: Trade) => t.userId === userId);
-            const currentPositions = useTradeStore.getState().openPositions;
-            if (JSON.stringify(currentPositions) !== JSON.stringify(userOpenTrades)) {
-              setOpenPositions(userOpenTrades);
-              useTradeStore.getState().setOpenPositions(userOpenTrades);
-            }
-          }
+        }
 
-          // 4. Update user's specific data if changed
-          if (payload.wallets) {
-            const currentWallets = useWalletStore.getState().wallets;
-            if (JSON.stringify(currentWallets) !== JSON.stringify(payload.wallets)) {
-              setWallets(payload.wallets);
-              useWalletStore.getState().setWallets(payload.wallets);
-            }
+        // 2. Open positions update with optimistic trade preservation
+        if (payload.activeTrades && token && userId) {
+          const userOpenTrades = payload.activeTrades.filter((t: Trade) => t.userId === userId);
+          const currentPositions = useTradeStore.getState().openPositions;
+          // Keep pending optimistic trades that have not yet been settled or replaced
+          const pendingOptimistic = currentPositions.filter((p: Trade) => 
+            p.id.startsWith('tr_opt_') && !userOpenTrades.some((u: Trade) => u.id === p.id)
+          );
+          const mergedPositions = [...userOpenTrades, ...pendingOptimistic];
+
+          if (JSON.stringify(currentPositions) !== JSON.stringify(mergedPositions)) {
+            setOpenPositions(mergedPositions);
+            useTradeStore.getState().setOpenPositions(mergedPositions);
           }
-          if (payload.closedTrades) {
-            const currentClosed = useTradeStore.getState().closedTrades;
-            if (JSON.stringify(currentClosed) !== JSON.stringify(payload.closedTrades)) {
-              setClosedTrades(payload.closedTrades);
-              useTradeStore.getState().setClosedTrades(payload.closedTrades);
-              useHistoryStore.getState().setClosedTrades(payload.closedTrades);
-            }
+        }
+
+        // 3. Wallets update
+        if (payload.wallets) {
+          const currentWallets = useWalletStore.getState().wallets;
+          if (JSON.stringify(currentWallets) !== JSON.stringify(payload.wallets)) {
+            setWallets(payload.wallets);
+            useWalletStore.getState().setWallets(payload.wallets);
           }
-          if (payload.transactions) {
-            const currentTxs = useHistoryStore.getState().transactions;
-            if (JSON.stringify(currentTxs) !== JSON.stringify(payload.transactions)) {
-              setTransactions(payload.transactions);
-              useHistoryStore.getState().setTransactions(payload.transactions);
-            }
+        }
+
+        // 4. Closed trades update (instant win/loss detection)
+        if (payload.closedTrades) {
+          const currentClosed = useTradeStore.getState().closedTrades;
+          if (JSON.stringify(currentClosed) !== JSON.stringify(payload.closedTrades)) {
+            setClosedTrades(payload.closedTrades);
+            useTradeStore.getState().setClosedTrades(payload.closedTrades);
+            useHistoryStore.getState().setClosedTrades(payload.closedTrades);
           }
-          if (payload.notifications) {
-            const currentNotifs = useNotificationStore.getState().notifications;
-            if (JSON.stringify(currentNotifs) !== JSON.stringify(payload.notifications)) {
-              setNotifications(payload.notifications);
-              useNotificationStore.getState().setNotifications(payload.notifications);
-            }
+        }
+
+        // 5. Transactions & Notifications
+        if (payload.transactions) {
+          const currentTxs = useHistoryStore.getState().transactions;
+          if (JSON.stringify(currentTxs) !== JSON.stringify(payload.transactions)) {
+            setTransactions(payload.transactions);
+            useHistoryStore.getState().setTransactions(payload.transactions);
+          }
+        }
+        if (payload.notifications) {
+          const currentNotifs = useNotificationStore.getState().notifications;
+          if (JSON.stringify(currentNotifs) !== JSON.stringify(payload.notifications)) {
+            setNotifications(payload.notifications);
+            useNotificationStore.getState().setNotifications(payload.notifications);
           }
         }
       } catch (err) {
@@ -588,6 +600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setError(e.message);
       if (e.message && (e.message.toLowerCase().includes('insufficient') || e.message.toLowerCase().includes('balance'))) {
         useWalletStore.getState().setDepositModalOpen(true);
+        window.location.hash = '#/deposit';
       }
       return false;
     }

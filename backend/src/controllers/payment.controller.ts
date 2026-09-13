@@ -10,6 +10,16 @@ import { Database } from '../../server/db';
 
 const pollCounters = new Map<string, { count: number; startTime: number }>();
 
+// Periodic pruning of stale poll counters (>30 min) to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [ref, info] of pollCounters.entries()) {
+    if (now - info.startTime > 30 * 60 * 1000) {
+      pollCounters.delete(ref);
+    }
+  }
+}, 10 * 60 * 1000);
+
 export class PaymentController {
   /**
    * POST /api/payments/deposit

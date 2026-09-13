@@ -80,15 +80,17 @@ export function toSafeISOString(val: any): string | undefined {
   return undefined;
 }
 
-// Lazy/safe Prisma client instantiation with connection pooling
+// Lazy/safe Prisma client instantiation with connection pooling optimized for Neon Serverless
 let prismaClientInstance: PrismaClient | null = null;
+
 export function getPrismaClient(): PrismaClient | null {
   if (!prismaClientInstance && process.env.DATABASE_URL) {
     try {
       let dbUrl = process.env.DATABASE_URL;
+      // Configure optimal pooling parameters for Neon serverless PostgreSQL
       if (!dbUrl.includes('connection_limit=')) {
         const separator = dbUrl.includes('?') ? '&' : '?';
-        dbUrl = `${dbUrl}${separator}connection_limit=5&pool_timeout=10`;
+        dbUrl = `${dbUrl}${separator}connection_limit=10&pool_timeout=15`;
       }
       prismaClientInstance = new PrismaClient({
         datasources: {
@@ -104,6 +106,40 @@ export function getPrismaClient(): PrismaClient | null {
   return prismaClientInstance;
 }
 
+/**
+ * Lightweight, non-blocking health check for PostgreSQL connectivity (2-second timeout)
+ */
+export async function checkDbHealth(): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return { ok: true, message: 'In-Memory / File Store active' };
+  }
+  const start = Date.now();
+  try {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Database ping timeout (>2000ms)')), 2000)
+    );
+    await Promise.race([prisma.$queryRaw`SELECT 1`, timeout]);
+    return { ok: true, message: 'PostgreSQL/Neon connected', latencyMs: Date.now() - start };
+  } catch (err: any) {
+    return { ok: false, message: err?.message || 'Database ping error' };
+  }
+}
+
+/**
+ * Gracefully disconnects Prisma client during process shutdown
+ */
+export async function disconnectPrisma(): Promise<void> {
+  if (prismaClientInstance) {
+    try {
+      await prismaClientInstance.$disconnect();
+      console.log('[DB] Prisma client disconnected cleanly.');
+    } catch (e) {
+      // ignore on exit
+    }
+  }
+}
+
 export class Database {
   private static instance: Database;
   private data: DatabaseSchema = { ...defaultSchema };
@@ -111,6 +147,21 @@ export class Database {
   private isSyncingPostgres = false;
   private pendingPostgresSync = false;
   private syncPostgresTimer: NodeJS.Timeout | null = null;
+  private dirtyKeys: Set<string> = new Set();
+  private saveDebounceTimer: NodeJS.Timeout | null = null;
+  private isSavingDisk = false;
+
+  public markDirty(type: string, id: string): void {
+    this.dirtyKeys.add(`${type}:${id}`);
+  }
+
+  public unmarkDirty(type: string, id: string): void {
+    this.dirtyKeys.delete(`${type}:${id}`);
+  }
+
+  public isDirty(type: string, id: string): boolean {
+    return this.dirtyKeys.has(`${type}:${id}`);
+  }
 
   private constructor() {
     this.init().catch(err => console.error('[DB] Database initialization error:', err));
@@ -141,24 +192,32 @@ export class Database {
         if (userCount > 0) {
           console.log(`[DB] PostgreSQL contains existing data (${userCount} users). Using PostgreSQL as single source of truth.`);
           
-          const [
-            users, wallets, transactions, trades, supportTickets,
-            announcements, notifications, referralCodes, referralEarnings,
-            activityLogs, mpesaTxs, paymentTxs, withdrawalReqs
-          ] = await Promise.all([
+          // Batch startup queries in small concurrent groups to stay well within pool limits
+          const [users, wallets, referralCodes] = await Promise.all([
             prisma.user.findMany(),
             prisma.wallet.findMany(),
-            prisma.transaction.findMany(),
-            prisma.trade.findMany(),
-            prisma.supportTicket.findMany({ include: { replies: true } }),
-            prisma.announcement.findMany(),
-            prisma.notification.findMany(),
             prisma.referralCode.findMany(),
-            prisma.referralEarning.findMany(),
-            prisma.activityLog.findMany(),
-            prisma.mpesaTransaction.findMany(),
-            prisma.paymentTransaction.findMany(),
-            prisma.withdrawalRequest.findMany(),
+          ]);
+
+          const [openTrades, recentClosedTrades, transactions, supportTickets] = await Promise.all([
+            prisma.trade.findMany({ where: { status: 'open' } }),
+            prisma.trade.findMany({ where: { status: 'closed' }, orderBy: { closedAt: 'desc' }, take: 200 }),
+            prisma.transaction.findMany({ orderBy: { createdAt: 'desc' }, take: 500 }),
+            prisma.supportTicket.findMany({ orderBy: { createdAt: 'desc' }, take: 100, include: { replies: true } }),
+          ]);
+          const trades = [...openTrades, ...recentClosedTrades];
+
+          const [announcements, notifications, referralEarnings] = await Promise.all([
+            prisma.announcement.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+            prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+            prisma.referralEarning.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+          ]);
+
+          const [activityLogs, mpesaTxs, paymentTxs, withdrawalReqs] = await Promise.all([
+            prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+            prisma.mpesaTransaction.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+            prisma.paymentTransaction.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+            prisma.withdrawalRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
           ]);
 
           this.data.users = users.map((u: any) => ({
@@ -439,13 +498,19 @@ export class Database {
     }
   }
 
-  public async syncToPostgres() {
+  public async syncToPostgres(forceAll: boolean = false) {
     const prisma = getPrismaClient();
     if (!prisma) return;
+
+    // Delta sync: If no entities are dirty and not forcing all, exit instantly (0 queries!)
+    if (!forceAll && this.dirtyKeys.size === 0) {
+      return;
+    }
 
     try {
       // Upsert Users
       for (const u of this.data.users) {
+        if (!forceAll && !this.dirtyKeys.has(`user:${u.id}`)) continue;
         await prisma.user.upsert({
           where: { id: u.id },
           update: {
@@ -479,10 +544,12 @@ export class Database {
             createdAt: u.createdAt ? new Date(u.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('user', u.id);
       }
 
       // Upsert Wallets
       for (const w of this.data.wallets) {
+        if (!forceAll && !this.dirtyKeys.has(`wallet:${w.id}`)) continue;
         await prisma.wallet.upsert({
           where: { id: w.id },
           update: {
@@ -499,10 +566,12 @@ export class Database {
             updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
           }
         });
+        this.unmarkDirty('wallet', w.id);
       }
 
       // Upsert Transactions
       for (const t of this.data.transactions) {
+        if (!forceAll && !this.dirtyKeys.has(`transaction:${t.id}`)) continue;
         await prisma.transaction.upsert({
           where: { id: t.id },
           update: {
@@ -526,10 +595,12 @@ export class Database {
             createdAt: t.createdAt ? new Date(t.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('transaction', t.id);
       }
 
       // Upsert Trades
       for (const tr of this.data.trades) {
+        if (!forceAll && !this.dirtyKeys.has(`trade:${tr.id}`)) continue;
         await prisma.trade.upsert({
           where: { id: tr.id },
           update: {
@@ -539,7 +610,8 @@ export class Database {
             status: tr.status as any,
             pnl: tr.pnl,
             isDemo: tr.isDemo,
-            closedAt: tr.closedAt ? new Date(tr.closedAt) : null
+            closedAt: tr.closedAt ? new Date(tr.closedAt) : null,
+            settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : null
           },
           create: {
             id: tr.id,
@@ -563,10 +635,12 @@ export class Database {
             settlementDigit: tr.settlementDigit != null ? tr.settlementDigit : null
           }
         });
+        this.unmarkDirty('trade', tr.id);
       }
 
       // Upsert Support Tickets & Replies
       for (const st of this.data.supportTickets) {
+        if (!forceAll && !this.dirtyKeys.has(`supportTicket:${st.id}`)) continue;
         await prisma.supportTicket.upsert({
           where: { id: st.id },
           update: {
@@ -609,10 +683,12 @@ export class Database {
             });
           }
         }
+        this.unmarkDirty('supportTicket', st.id);
       }
 
       // Upsert Announcements
       for (const a of this.data.announcements) {
+        if (!forceAll && !this.dirtyKeys.has(`announcement:${a.id}`)) continue;
         await prisma.announcement.upsert({
           where: { id: a.id },
           update: {
@@ -628,10 +704,12 @@ export class Database {
             createdAt: a.createdAt ? new Date(a.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('announcement', a.id);
       }
 
       // Upsert Notifications
       for (const n of this.data.notifications) {
+        if (!forceAll && !this.dirtyKeys.has(`notification:${n.id}`)) continue;
         await prisma.notification.upsert({
           where: { id: n.id },
           update: {
@@ -648,10 +726,12 @@ export class Database {
             createdAt: n.createdAt ? new Date(n.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('notification', n.id);
       }
 
       // Upsert Referral Codes
       for (const rc of this.data.referralCodes) {
+        if (!forceAll && !this.dirtyKeys.has(`referralCode:${rc.id}`)) continue;
         await prisma.referralCode.upsert({
           where: { id: rc.id },
           update: {
@@ -664,10 +744,12 @@ export class Database {
             createdAt: rc.createdAt ? new Date(rc.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('referralCode', rc.id);
       }
 
       // Upsert Referral Earnings
       for (const re of this.data.referralEarnings) {
+        if (!forceAll && !this.dirtyKeys.has(`referralEarning:${re.id}`)) continue;
         await prisma.referralEarning.upsert({
           where: { id: re.id },
           update: {
@@ -683,10 +765,12 @@ export class Database {
             createdAt: re.createdAt ? new Date(re.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('referralEarning', re.id);
       }
 
       // Upsert Activity Logs
       for (const al of this.data.activityLogs) {
+        if (!forceAll && !this.dirtyKeys.has(`activityLog:${al.id}`)) continue;
         await prisma.activityLog.upsert({
           where: { id: al.id },
           update: {
@@ -703,10 +787,12 @@ export class Database {
             createdAt: al.createdAt ? new Date(al.createdAt) : new Date()
           }
         });
+        this.unmarkDirty('activityLog', al.id);
       }
 
       // Upsert Mpesa Transactions
       for (const m of this.data.mpesaTransactions) {
+        if (!forceAll && !this.dirtyKeys.has(`mpesaTransaction:${m.id}`)) continue;
         await prisma.mpesaTransaction.upsert({
           where: { id: m.id },
           update: {
@@ -731,10 +817,12 @@ export class Database {
             updatedAt: m.updatedAt ? new Date(m.updatedAt) : new Date()
           }
         });
+        this.unmarkDirty('mpesaTransaction', m.id);
       }
 
       // Upsert Payment Transactions
       for (const p of this.data.paymentTransactions) {
+        if (!forceAll && !this.dirtyKeys.has(`paymentTransaction:${p.id}`)) continue;
         await prisma.paymentTransaction.upsert({
           where: { id: p.id },
           update: {
@@ -775,10 +863,12 @@ export class Database {
             updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date()
           }
         });
+        this.unmarkDirty('paymentTransaction', p.id);
       }
 
       // Upsert Withdrawal Requests
       for (const w of (this.data.withdrawalRequests || [])) {
+        if (!forceAll && !this.dirtyKeys.has(`withdrawalRequest:${w.id}`)) continue;
         await prisma.withdrawalRequest.upsert({
           where: { id: w.id },
           update: {
@@ -808,10 +898,11 @@ export class Database {
             updatedAt: w.updatedAt ? new Date(w.updatedAt) : new Date()
           }
         });
+        this.unmarkDirty('withdrawalRequest', w.id);
       }
 
       // Upsert PlatformSettings
-      if (this.data.platformSettings) {
+      if (this.data.platformSettings && (forceAll || this.dirtyKeys.has('platformSettings:default'))) {
         await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS platform_settings (
             id VARCHAR(255) PRIMARY KEY DEFAULT 'default',
@@ -838,30 +929,150 @@ export class Database {
             updatedAt: new Date()
           }
         });
+        this.unmarkDirty('platformSettings', 'default');
       }
 
-      console.log('[DB] Synchronized data to PostgreSQL via Prisma successfully.');
     } catch (err) {
-      console.warn('[DB] Error saving to PostgreSQL via Prisma:', err);
+      console.warn('[DB] Error saving delta to PostgreSQL via Prisma:', (err as any)?.message);
     }
   }
 
+  // Targeted async persistence helpers for instantaneous zero-lag writes
+  public async persistTrade(trade: Trade): Promise<void> {
+    const idx = this.data.trades.findIndex(t => t.id === trade.id);
+    if (idx >= 0) this.data.trades[idx] = trade;
+    else this.data.trades.unshift(trade);
+    this.markDirty('trade', trade.id);
+
+    const prisma = getPrismaClient();
+    if (prisma) {
+      prisma.trade.upsert({
+        where: { id: trade.id },
+        update: {
+          exitPrice: trade.exitPrice != null ? trade.exitPrice : null,
+          status: trade.status as any,
+          pnl: trade.pnl,
+          closedAt: trade.closedAt ? new Date(trade.closedAt) : null,
+          settlementDigit: trade.settlementDigit != null ? trade.settlementDigit : null,
+        },
+        create: {
+          id: trade.id,
+          userId: trade.userId,
+          type: trade.type as any,
+          symbol: trade.symbol,
+          quantity: trade.quantity,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.exitPrice != null ? trade.exitPrice : null,
+          status: trade.status as any,
+          pnl: trade.pnl,
+          isDemo: trade.isDemo,
+          createdAt: trade.createdAt ? new Date(trade.createdAt) : new Date(),
+          closedAt: trade.closedAt ? new Date(trade.closedAt) : null,
+          contractType: (trade.contractType as any) || 'spot',
+          prediction: trade.prediction || null,
+          durationSeconds: trade.durationSeconds || null,
+          expiryTime: trade.expiryTime ? new Date(trade.expiryTime) : null,
+          barrier: trade.barrier != null ? trade.barrier : null,
+          payoutRate: trade.payoutRate != null ? trade.payoutRate : null,
+          settlementDigit: trade.settlementDigit != null ? trade.settlementDigit : null
+        }
+      }).then(() => this.unmarkDirty('trade', trade.id)).catch(() => {});
+    }
+    this.save();
+  }
+
+  public async persistWallet(wallet: Wallet): Promise<void> {
+    const idx = this.data.wallets.findIndex(w => w.id === wallet.id);
+    if (idx >= 0) this.data.wallets[idx] = wallet;
+    else this.data.wallets.push(wallet);
+    this.markDirty('wallet', wallet.id);
+
+    const prisma = getPrismaClient();
+    if (prisma) {
+      prisma.wallet.upsert({
+        where: { id: wallet.id },
+        update: {
+          balance: wallet.balance,
+          demoBalance: wallet.demoBalance,
+          updatedAt: wallet.updatedAt ? new Date(wallet.updatedAt) : new Date()
+        },
+        create: {
+          id: wallet.id,
+          userId: wallet.userId,
+          asset: wallet.asset,
+          balance: wallet.balance,
+          demoBalance: wallet.demoBalance,
+          updatedAt: wallet.updatedAt ? new Date(wallet.updatedAt) : new Date()
+        }
+      }).then(() => this.unmarkDirty('wallet', wallet.id)).catch(() => {});
+    }
+    this.save();
+  }
+
+  public async persistTransaction(tx: Transaction): Promise<void> {
+    const idx = this.data.transactions.findIndex(t => t.id === tx.id);
+    if (idx >= 0) this.data.transactions[idx] = tx;
+    else this.data.transactions.unshift(tx);
+    this.markDirty('transaction', tx.id);
+
+    const prisma = getPrismaClient();
+    if (prisma) {
+      prisma.transaction.upsert({
+        where: { id: tx.id },
+        update: {
+          amount: tx.amount,
+          status: tx.status as any,
+          txHash: tx.txHash || '',
+          description: tx.description || '',
+          phone: tx.phone || null
+        },
+        create: {
+          id: tx.id,
+          userId: tx.userId,
+          walletId: tx.walletId,
+          type: tx.type as any,
+          asset: tx.asset || 'USD',
+          amount: tx.amount,
+          status: tx.status as any,
+          txHash: tx.txHash || '',
+          description: tx.description || '',
+          phone: tx.phone || null,
+          createdAt: tx.createdAt ? new Date(tx.createdAt) : new Date()
+        }
+      }).then(() => this.unmarkDirty('transaction', tx.id)).catch(() => {});
+    }
+    this.save();
+  }
+
   public save() {
+    // Non-blocking debounced disk write (3s throttle) to prevent event-loop stalls
+    if (!this.saveDebounceTimer) {
+      this.saveDebounceTimer = setTimeout(() => {
+        this.saveDebounceTimer = null;
+        this.writeLocalStoreAsync().catch(() => {});
+      }, 3000);
+    }
+
+    if (process.env.DATABASE_URL) {
+      this.schedulePostgresSync();
+    }
+  }
+
+  private async writeLocalStoreAsync() {
+    if (this.isSavingDisk) return;
+    this.isSavingDisk = true;
     try {
       const dir = path.dirname(DB_FILE);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+        await fs.promises.mkdir(dir, { recursive: true });
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+      const tmpFile = `${DB_FILE}.tmp`;
+      await fs.promises.writeFile(tmpFile, JSON.stringify(this.data), 'utf-8');
+      await fs.promises.rename(tmpFile, DB_FILE);
     } catch (error) {
-      if (!process.env.DATABASE_URL) {
-        console.error('[DB] Error saving to local db-store.json file:', error);
-      }
-    }
-
-    // Schedule debounced/throttled Postgres sync if DATABASE_URL is present
-    if (process.env.DATABASE_URL) {
-      this.schedulePostgresSync();
+      // Non-blocking fallback
+    } finally {
+      this.isSavingDisk = false;
     }
   }
 

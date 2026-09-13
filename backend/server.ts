@@ -7,7 +7,7 @@ import express from 'express';
 import compression from 'compression';
 import path from 'path';
 import crypto from 'crypto';
-import { Database, getPrismaClient, hashPassword, toSafeISOString } from './server/db';
+import { Database, getPrismaClient, hashPassword, toSafeISOString, checkDbHealth } from './server/db';
 import { 
   User, UserRole, Wallet, Transaction, TransactionType, Trade, SupportTicket, 
   Announcement, Notification, ReferralCode, ReferralEarning, ActivityLog, MarketPrice,
@@ -63,6 +63,37 @@ app.use((req, res, next) => {
 
 app.use(compression());
 app.use(express.json());
+
+// ============================================================================
+// HEALTH & READINESS PROBES (Render Web Service / Docker / Kubernetes)
+// ============================================================================
+app.get(['/health', '/api/health'], (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'pesaoption-backend',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get(['/ready', '/api/ready'], async (_req, res) => {
+  const dbHealth = await checkDbHealth();
+  const memory = process.memoryUsage();
+  const isHealthy = dbHealth.ok;
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'ready' : 'not_ready',
+    service: 'pesaoption-backend',
+    database: dbHealth,
+    uptime: Math.floor(process.uptime()),
+    memory: {
+      rssMb: Math.round(memory.rss / (1024 * 1024)),
+      heapUsedMb: Math.round(memory.heapUsed / (1024 * 1024)),
+      heapTotalMb: Math.round(memory.heapTotal / (1024 * 1024))
+    },
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Serving robots.txt for SEO Crawlers
 app.get('/robots.txt', (req, res) => {
@@ -236,40 +267,80 @@ function simulateTick() {
 
   // Also settle any expired option contracts during tick
   settleExpiredOptionContracts();
+
+  // Instant broadcast of updated price tick to all connected SSE clients
+  broadcastMarketPrices();
 }
 
 // Active SSE Connections
 type CustomSSEResponse = express.Response & { reqUserId?: string };
 let sseClients: CustomSSEResponse[] = [];
 
-// Real-Time SSE Immediate Broadcast Helper
-function broadcastToSSEClients(targetUserId?: string) {
+// Broadcast prices to all clients with single JSON serialization
+function broadcastMarketPrices() {
   if (sseClients.length === 0) return;
-  
-  sseClients.forEach((client) => {
+  const msg = `data: ${JSON.stringify({ type: 'price_feed', prices: marketPrices })}\n\n`;
+  for (let i = sseClients.length - 1; i >= 0; i--) {
+    const client = sseClients[i];
     try {
-      const uId = client.reqUserId;
-      if (!targetUserId || uId === targetUserId) {
-        const payload: any = { 
-          type: 'price_feed', 
-          prices: marketPrices,
-          activeTrades: db.trades.filter(t => t.status === 'open')
-        };
+      client.write(msg);
+    } catch {
+      sseClients.splice(i, 1);
+    }
+  }
+}
 
-        if (uId) {
-          payload.wallets = db.wallets.filter(w => w.userId === uId);
-          payload.transactions = db.transactions.filter(t => t.userId === uId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-          payload.closedTrades = db.trades.filter(t => t.userId === uId && t.status === 'closed').sort((a,b) => (b.closedAt || '').localeCompare(a.closedAt || ''));
-          payload.notifications = db.notifications.filter(n => n.userId === uId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-        }
+// Broadcast targeted user delta sync (wallets, activeTrades, closedTrades, transactions, notifications)
+function broadcastUserUpdate(userId: string) {
+  if (!userId || sseClients.length === 0) return;
+  const userClients = sseClients.filter(c => c.reqUserId === userId);
+  if (userClients.length === 0) return;
 
-        client.write(`data: ${JSON.stringify(payload)}\n\n`);
-      }
-    } catch (e) {
+  const payload = {
+    type: 'user_sync',
+    wallets: db.wallets.filter(w => w.userId === userId),
+    activeTrades: db.trades.filter(t => t.userId === userId && t.status === 'open'),
+    closedTrades: db.trades.filter(t => t.userId === userId && t.status === 'closed')
+      .sort((a, b) => (b.closedAt || '').localeCompare(a.closedAt || ''))
+      .slice(0, 30),
+    transactions: db.transactions.filter(t => t.userId === userId)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 30),
+    notifications: db.notifications.filter(n => n.userId === userId)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 30)
+  };
+
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const client of userClients) {
+    try {
+      client.write(msg);
+    } catch {
       // client connection closed or errored
     }
-  });
+  }
 }
+
+// Real-Time SSE Immediate Broadcast Helper (Backwards compatible)
+function broadcastToSSEClients(targetUserId?: string) {
+  if (targetUserId) {
+    broadcastUserUpdate(targetUserId);
+  } else {
+    broadcastMarketPrices();
+  }
+}
+
+// Single global keepalive heartbeat every 15 seconds to keep proxies and cloud load balancers open
+setInterval(() => {
+  for (let i = sseClients.length - 1; i >= 0; i--) {
+    const client = sseClients[i];
+    try {
+      client.write(': keepalive\n\n');
+    } catch {
+      sseClients.splice(i, 1);
+    }
+  }
+}, 15000);
 
 // Dedicated Instant Option Contract Settlement Engine (checks every 100ms for 0ms lag)
 function settleExpiredOptionContracts() {
@@ -392,6 +463,11 @@ function settleExpiredOptionContracts() {
         };
         db.transactions.push(transaction);
 
+        // Immediate background persistence to PostgreSQL
+        db.persistTrade(trade);
+        if (usdWallet) db.persistWallet(usdWallet);
+        db.persistTransaction(transaction);
+
         createNotification(
           trade.userId, 
           `Option Settle: ${won ? 'WON' : 'LOST'}`, 
@@ -404,7 +480,7 @@ function settleExpiredOptionContracts() {
   if (settledAny) {
     db.save();
     affectedUserIds.forEach(uId => {
-      broadcastToSSEClients(uId);
+      broadcastUserUpdate(uId);
     });
   }
 }
@@ -422,44 +498,36 @@ setInterval(settleExpiredOptionContracts, 100);
 // 1. Real-Time Price/Balance SSE Feed
 app.get('/api/realtime', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+
+  // Keep socket alive without timeouts
+  req.socket.setTimeout(0);
+  req.socket.setNoDelay(true);
+  req.socket.setKeepAlive(true);
 
   const userId = req.query.userId as string;
   (res as CustomSSEResponse).reqUserId = userId;
 
   sseClients.push(res as CustomSSEResponse);
 
-  // Send initial load
-  const initialPayload: any = { type: 'price_feed', prices: marketPrices };
+  // Send initial full snapshot immediately on connection
+  const initialPayload: any = { 
+    type: 'price_feed', 
+    prices: marketPrices,
+    activeTrades: db.trades.filter(t => t.status === 'open')
+  };
   if (userId) {
     initialPayload.wallets = db.wallets.filter(w => w.userId === userId);
-    initialPayload.transactions = db.transactions.filter(t => t.userId === userId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-    initialPayload.closedTrades = db.trades.filter(t => t.userId === userId && t.status === 'closed').sort((a,b) => (b.closedAt || '').localeCompare(a.closedAt || ''));
-    initialPayload.notifications = db.notifications.filter(n => n.userId === userId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    initialPayload.transactions = db.transactions.filter(t => t.userId === userId).sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 30);
+    initialPayload.closedTrades = db.trades.filter(t => t.userId === userId && t.status === 'closed').sort((a,b) => (b.closedAt || '').localeCompare(a.closedAt || '')).slice(0, 30);
+    initialPayload.notifications = db.notifications.filter(n => n.userId === userId).sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 30);
   }
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
 
-  const timerId = setInterval(() => {
-    const payload: any = { 
-      type: 'price_feed', 
-      prices: marketPrices,
-      activeTrades: db.trades.filter(t => t.status === 'open')
-    };
-
-    if (userId) {
-      payload.wallets = db.wallets.filter(w => w.userId === userId);
-      payload.transactions = db.transactions.filter(t => t.userId === userId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-      payload.closedTrades = db.trades.filter(t => t.userId === userId && t.status === 'closed').sort((a,b) => (b.closedAt || '').localeCompare(a.closedAt || ''));
-      payload.notifications = db.notifications.filter(n => n.userId === userId).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-    }
-
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  }, 1000);
-
   req.on('close', () => {
-    clearInterval(timerId);
     sseClients = sseClients.filter(c => c !== res);
   });
 });
@@ -1107,7 +1175,11 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
     const userCapital = isDemo ? usdWallet.demoBalance : usdWallet.balance;
 
     if (userCapital < totalCost) {
-      return res.status(400).json({ error: `Insufficient margin/funds. Cost: $${totalCost.toFixed(2)}, Available: $${userCapital.toFixed(2)}` });
+      return res.status(400).json({ 
+        error: `Insufficient margin/funds. Cost: $${totalCost.toFixed(2)}, Available: $${userCapital.toFixed(2)}`,
+        code: 'INSUFFICIENT_BALANCE',
+        redirectTo: '/deposit'
+      });
     }
 
     // Deduct cash margin
@@ -1153,12 +1225,14 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
     };
 
     db.trades.push(newTrade);
+    db.persistTrade(newTrade);
+    if (usdWallet) db.persistWallet(usdWallet);
     db.save();
 
     logActivity(req.userId, 'Open Trade', `Opened ${type.toUpperCase()} position of ${qty} ${symbol} at $${assetPriceItem.price}`, req);
     createNotification(req.userId, 'Trade Executed', `Your market ${type.toUpperCase()} order for ${qty} ${symbol} filled at $${assetPriceItem.price.toLocaleString()}`);
 
-    broadcastToSSEClients(req.userId);
+    broadcastUserUpdate(req.userId);
 
     return res.json({ message: 'Order filled', trade: newTrade, wallets: db.wallets.filter(w => w.userId === req.userId) });
   } else {
@@ -1170,7 +1244,11 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
     const userCapital = isDemo ? usdWallet.demoBalance : usdWallet.balance;
 
     if (userCapital < stake) {
-      return res.status(400).json({ error: `Insufficient funds for stake. Stake: $${stake.toFixed(2)}, Available: $${userCapital.toFixed(2)}` });
+      return res.status(400).json({ 
+        error: `Insufficient funds for stake. Stake: $${stake.toFixed(2)}, Available: $${userCapital.toFixed(2)}`,
+        code: 'INSUFFICIENT_BALANCE',
+        redirectTo: '/deposit'
+      });
     }
 
     // Deduct stake from wallet
@@ -1203,12 +1281,14 @@ app.post('/api/trade/open', authenticate, (req: any, res) => {
     };
 
     db.trades.push(newTrade);
+    db.persistTrade(newTrade);
+    if (usdWallet) db.persistWallet(usdWallet);
     db.save();
 
     logActivity(req.userId, 'Buy Option Contract', `Purchased ${activeContractType.toUpperCase()} contract on ${symbol} with stake $${stake} and prediction ${prediction}`, req);
     createNotification(req.userId, 'Option Contract Placed', `Successfully placed $${stake} ${activeContractType.toUpperCase().replace('_', ' ')} contract on ${symbol} expiring in ${durationSeconds} seconds.`);
 
-    broadcastToSSEClients(req.userId);
+    broadcastUserUpdate(req.userId);
 
     return res.json({ message: 'Contract placed', trade: newTrade, wallets: db.wallets.filter(w => w.userId === req.userId) });
   }
@@ -1283,12 +1363,14 @@ app.post('/api/trade/close', authenticate, (req: any, res) => {
   trade.pnl = finalPnl;
   trade.closedAt = new Date().toISOString();
 
+  db.persistTrade(trade);
+  if (usdWallet) db.persistWallet(usdWallet);
   db.save();
 
   logActivity(req.userId, 'Close Trade', `Closed ${trade.symbol} position at $${assetPriceItem.price} with PnL of $${finalPnl}`, req);
   createNotification(req.userId, 'Trade Settled', `Settled ${trade.symbol} position. P&L: $${finalPnl > 0 ? '+' : ''}${finalPnl.toLocaleString()}`);
 
-  broadcastToSSEClients(req.userId);
+  broadcastUserUpdate(req.userId);
 
   res.json({ message: 'Position closed and settled', trade, wallets: db.wallets.filter(w => w.userId === req.userId) });
 });
@@ -2701,6 +2783,43 @@ app.get('/', (req, res, next) => {
     endpoints: '/api'
   });
 });
+
+// Global Express error handler to prevent unhandled express route crashes
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('[EXPRESS ROUTE ERROR]', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'production' ? 'An internal error occurred.' : (err?.message || 'Server error')
+  });
+});
+
+// ============================================================================
+// PROCESS CRASH GUARDS & GRACEFUL SHUTDOWN (Render Production Stability)
+// ============================================================================
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL UNCAUGHT EXCEPTION - PREVENTED PROCESS CRASH]:', err);
+});
+
+process.on('unhandledRejection', (reason, _promise) => {
+  console.error('[UNHANDLED PROMISE REJECTION - PREVENTED PROCESS CRASH]:', reason);
+});
+
+const handleGracefulShutdown = async (signal: string) => {
+  console.log(`[SERVER] Received ${signal}. Gracefully syncing in-memory data to PostgreSQL...`);
+  try {
+    await Database.getInstance().syncToPostgres();
+    console.log('[SERVER] Database sync complete.');
+  } catch (err) {
+    console.error('[SERVER] Database sync on shutdown warning:', err);
+  }
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
 
 // ============================================================================
 // VITE CLIENT MIDDLEWARE (LOCAL DEV ONLY) & SERVER START

@@ -94,9 +94,12 @@ export const DashboardView: React.FC = () => {
     }
   }, [location.pathname, navigate]);
 
-  // Refresh user data periodically
+  // Refresh user data periodically & handle deposit route
   useEffect(() => {
     refreshUserData();
+    if (location.pathname === '/deposit') {
+      setDepositModalOpen(true);
+    }
   }, [location.pathname]);
 
   const { balance, demoBalance } = getUsdBalance();
@@ -309,6 +312,7 @@ export const DashboardView: React.FC = () => {
               <Route path="/dashboard" element={<TradingDeskView />} />
               <Route path="/scanner" element={<ScannerView />} />
               <Route path="/wallet" element={<WalletsView />} />
+              <Route path="/deposit" element={<WalletsView />} />
               <Route path="/deposit/callback" element={<DepositCallbackView />} />
               <Route path="/referral" element={<ReferralView />} />
               <Route path="/support" element={<SupportView />} />

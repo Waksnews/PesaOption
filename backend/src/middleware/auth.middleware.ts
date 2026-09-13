@@ -7,7 +7,29 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { Database, getPrismaClient } from '../../server/db';
 
-export const SESSION_SECRET = process.env.SESSION_SECRET || 'cryptonichub_secret_session_key_2026';
+export const SESSION_SECRET = process.env.SESSION_SECRET || 'pesaoption_production_secret_session_key_2026';
+
+// High-speed user session cache (30-second TTL) to prevent Neon connection pool exhaustion
+interface CachedUserRecord {
+  user: any;
+  cachedAt: number;
+}
+const userCache = new Map<string, CachedUserRecord>();
+const USER_CACHE_TTL_MS = 30 * 1000;
+
+// Periodic cleanup of userCache
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, record] of userCache.entries()) {
+    if (now - record.cachedAt > USER_CACHE_TTL_MS) {
+      userCache.delete(id);
+    }
+  }
+}, 60 * 1000);
+
+export function invalidateUserCache(userId: string) {
+  userCache.delete(userId);
+}
 
 /**
  * Generates a signed session token (JWT equivalent)
@@ -18,14 +40,13 @@ export function generateSessionToken(userId: string, role: string): string {
   const payload = `${userId}:${role}:${expires}:${issuedAt}`;
   const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
   const token = Buffer.from(`${payload}:${signature}`).toString('base64');
-  console.log(`[AUTH] JWT generated`);
   return token;
 }
 
 /**
- * Verifies a session token signature and expiration against PostgreSQL
+ * Verifies a session token signature and expiration against PostgreSQL / Cache
  */
-export async function verifySessionToken(token: string): Promise<{ userId: string; role: string } | null> {
+export async function verifySessionToken(token: string): Promise<{ userId: string; role: string; user?: any } | null> {
   try {
     const decoded = Buffer.from(token, 'base64').toString('utf-8');
     const parts = decoded.split(':');
@@ -39,13 +60,11 @@ export async function verifySessionToken(token: string): Promise<{ userId: strin
     } else if (parts.length === 4) {
       [userId, role, expiresStr, signature] = parts;
     } else {
-      console.warn('[AUTH] Invalid JWT format');
       return null;
     }
 
     const expires = parseInt(expiresStr, 10);
     if (isNaN(expires) || Date.now() > expires) {
-      console.warn('[AUTH] Expired JWT');
       return null;
     }
 
@@ -53,43 +72,51 @@ export async function verifySessionToken(token: string): Promise<{ userId: strin
     const expectedSignature = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
     
     if (signature !== expectedSignature) {
-      console.warn('[AUTH] Invalid JWT signature');
       return null;
     }
 
-    const prisma = getPrismaClient();
+    // Check fast memory cache first
+    const now = Date.now();
+    const cached = userCache.get(userId);
     let user: any = null;
 
-    if (prisma) {
-      try {
-        user = await prisma.user.findUnique({ where: { id: userId } });
-      } catch (e) {
-        console.error('[AUTH] verifySessionToken Prisma lookup error:', e);
+    if (cached && (now - cached.cachedAt < USER_CACHE_TTL_MS)) {
+      user = cached.user;
+    } else {
+      // In-memory Database lookup (sub-millisecond)
+      const db = Database.getInstance();
+      user = db.users.find(u => u.id === userId);
+
+      // If not found in memory, query Prisma safely
+      if (!user) {
+        const prisma = getPrismaClient();
+        if (prisma) {
+          try {
+            user = await prisma.user.findUnique({ where: { id: userId } });
+          } catch (e) {
+            console.warn('[AUTH] Prisma user lookup error (graceful fallback):', (e as any)?.message);
+          }
+        }
+      }
+
+      if (user) {
+        userCache.set(userId, { user, cachedAt: now });
       }
     }
 
     if (!user) {
-      const db = Database.getInstance();
-      user = db.users.find(u => u.id === userId);
-    }
-
-    if (!user) {
-      console.warn('[AUTH] User not found for token');
       return null;
     }
 
     if (user.passwordChangedAt && issuedAt) {
       const passwordChangedTime = new Date(user.passwordChangedAt).getTime();
       if (issuedAt < passwordChangedTime) {
-        console.warn('[AUTH] Invalid JWT - password changed after token issuance');
         return null;
       }
     }
 
-    console.log('[AUTH] JWT verified');
-    return { userId, role: user.role || role };
+    return { userId, role: user.role || role, user };
   } catch (e) {
-    console.warn('[AUTH] Invalid JWT decoding error');
     return null;
   }
 }
@@ -100,45 +127,28 @@ export async function verifySessionToken(token: string): Promise<{ userId: strin
 export async function authenticate(req: any, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.warn('[AUTH] Missing Authorization header');
-    return res.status(401).json({ error: 'Unauthorized. Missing Authorization header.' });
+    return res.status(401).json({ success: false, error: 'Unauthorized. Missing Authorization header.' });
   }
 
   const token = authHeader.split(' ')[1];
-
   if (!token) {
-    console.warn('[AUTH] Empty Bearer token');
-    return res.status(401).json({ error: 'Unauthorized. Empty Bearer token.' });
+    return res.status(401).json({ success: false, error: 'Unauthorized. Empty Bearer token.' });
   }
 
   const session = await verifySessionToken(token);
   if (!session) {
-    return res.status(401).json({ error: 'Session expired or invalid.' });
+    return res.status(401).json({ success: false, error: 'Session expired or invalid.' });
   }
 
   req.userId = session.userId;
-  
-  const prisma = getPrismaClient();
-  let user: any = null;
-
-  if (prisma) {
-    try {
-      user = await prisma.user.findUnique({ where: { id: session.userId } });
-    } catch (e) {
-      console.error('[AUTH] authenticate Prisma lookup error:', e);
-    }
-  }
-
-  if (!user) {
-    const db = Database.getInstance();
-    user = db.users.find(u => u.id === session.userId);
-  }
+  const user = session.user;
 
   if (user) {
     if (user.email && user.email.toLowerCase() === 'bonayafatuma58@gmail.com' && user.role !== 'owner') {
       user.role = 'owner';
+      const prisma = getPrismaClient();
       if (prisma) {
-        await prisma.user.update({ where: { id: user.id }, data: { role: 'owner' } }).catch(() => {});
+        prisma.user.update({ where: { id: user.id }, data: { role: 'owner' } }).catch(() => {});
       }
       const db = Database.getInstance();
       const inMem = db.users.find(u => u.id === user.id);
@@ -149,6 +159,5 @@ export async function authenticate(req: any, res: Response, next: NextFunction) 
     req.userRole = session.role;
   }
 
-  console.log(`[AUTH] User authenticated: ${session.userId}`);
   next();
 }

@@ -261,33 +261,50 @@ export class ZetuPayService {
   }
 
   private static isPollerStarted = false;
+  private static pollerTimer: NodeJS.Timeout | null = null;
 
   /**
-   * Starts server-side automated background polling for pending payment transactions
+   * Starts server-side automated background polling for recent pending payment transactions
    */
   public static startBackgroundPoller() {
     if (this.isPollerStarted) return;
     this.isPollerStarted = true;
 
-    console.log('[ZETUPAY] Automated background poller active for pending deposits.');
-    setInterval(async () => {
+    console.log('[ZETUPAY] Automated background poller active for recent pending deposits.');
+    this.pollerTimer = setInterval(async () => {
       try {
         const db = Database.getInstance();
-        const pendingTxs = db.paymentTransactions.filter(p =>
-          (p.status as string) === 'Pending' || (p.status as string) === 'PENDING'
-        );
+        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+
+        // Only poll pending transactions created within the last 2 hours, max 5 per cycle
+        const pendingTxs = db.paymentTransactions
+          .filter(p => {
+            const isPending = (p.status as string) === 'Pending' || (p.status as string) === 'PENDING';
+            if (!isPending) return false;
+            const createdAtMs = p.createdAt ? new Date(p.createdAt).getTime() : 0;
+            return createdAtMs >= twoHoursAgo;
+          })
+          .slice(0, 5);
 
         for (const tx of pendingTxs) {
           try {
             await this.checkPaymentStatus(tx.reference || tx.paymentKey || '');
           } catch (e: any) {
-            // Ignore background check errors per transaction
+            // Ignore individual transaction status check failures
           }
         }
       } catch (err: any) {
-        // Poller loop guard
+        // Poller loop safety guard
       }
-    }, 10000); // Poll every 10 seconds
+    }, 15000); // Poll gently every 15 seconds
+  }
+
+  public static stopBackgroundPoller() {
+    if (this.pollerTimer) {
+      clearInterval(this.pollerTimer);
+      this.pollerTimer = null;
+    }
+    this.isPollerStarted = false;
   }
 
   /**

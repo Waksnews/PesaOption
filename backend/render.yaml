@@ -1,9 +1,10 @@
 services:
   - type: web
-    name: cryptonichub-backend
+    name: pesaoption-backend
     env: node
     buildCommand: npm install && npm run build
     startCommand: npm start
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
@@ -11,6 +12,14 @@ services:
         sync: false
       - key: PORT
         value: 10000
+      - key: SESSION_SECRET
+        sync: false
+      - key: ZETUPAY_SECRET_KEY
+        sync: false
+      - key: ZETUPAY_API_URL
+        value: https://pay.zetupay.co.ke/api/v1
+      - key: ZETUPAY_REDIRECT_URL
+        value: https://pesaoption.site/deposit/callback
       - key: AT_USERNAME
         value: sandbox
       - key: AT_API_KEY

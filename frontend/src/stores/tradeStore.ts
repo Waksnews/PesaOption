@@ -168,6 +168,7 @@ export const useTradeStore = create<TradeState>((set, get) => ({
         'error'
       );
       useWalletStore.getState().setDepositModalOpen(true);
+      window.location.hash = '#/deposit';
       return false;
     }
 
@@ -265,6 +266,7 @@ export const useTradeStore = create<TradeState>((set, get) => ({
       useNotificationStore.getState().addToast('Order Failed', errMsg, 'error');
       if (typeof errMsg === 'string' && (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('balance'))) {
         useWalletStore.getState().setDepositModalOpen(true);
+        window.location.hash = '#/deposit';
       }
       return false;
     }
