@@ -44,7 +44,15 @@ function getAi(): GoogleGenAI | null {
 import fs from 'fs';
 
 const app = express();
-const PORT = 3000;
+
+// Port detection: AI Studio internal container requires port 3000 strictly.
+// External cloud deployments (like Render) assign dynamic ports via process.env.PORT (e.g. 10000).
+const isCloudOrRender = Boolean(
+  process.env.RENDER || 
+  process.env.IS_RENDER || 
+  (process.env.NODE_ENV === 'production' && process.env.PORT && process.env.PORT !== '8080' && process.env.PORT !== '3000')
+);
+const PORT = isCloudOrRender && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Enable CORS for external frontends (e.g. Vercel deployments) and set security headers
 app.use((req, res, next) => {
@@ -2852,9 +2860,13 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SERVER] CryptonicHub Platform running at http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[SERVER] PesaOption Platform running at http://0.0.0.0:${PORT} (Process PID: ${process.pid})`);
     ZetuPayService.startBackgroundPoller();
+  });
+
+  server.on('error', (err: any) => {
+    console.error(`[SERVER] Listen error on port ${PORT}:`, err);
   });
 }
 
